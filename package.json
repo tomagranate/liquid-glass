@@ -1,6 +1,6 @@
 {
   "name": "@tomagranate/liquid-glass",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "A framework-independent liquid-glass (Apple-style refraction) effect for the web, with React components and a WebGL renderer.",
   "type": "module",
   "sideEffects": [
