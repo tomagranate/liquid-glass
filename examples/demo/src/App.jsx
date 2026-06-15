@@ -1,13 +1,12 @@
 import { useRef, useState } from "react";
+import { GlassStage, useGlassLens } from "@tomagranate/liquid-glass";
 import {
-  GlassStage,
   GlassButton,
   GlassToggleGroup,
   GlassSwitch,
   GlassSlider,
   Magnifier,
-  useGlassLens,
-} from "@tomagranate/liquid-glass";
+} from "./glass/index.ts";
 import Benchmark from "./Benchmark.jsx";
 
 export default function App() {

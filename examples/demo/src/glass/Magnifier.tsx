@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useGlassLens } from "./useGlassLens.js";
+import { useGlassLens } from "@tomagranate/liquid-glass";
 import "./components.css";
 
 export interface MagnifierProps {
