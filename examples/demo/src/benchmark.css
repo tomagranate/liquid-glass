@@ -1,0 +1,134 @@
+.bench {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483600;
+  overflow: hidden;
+  color: #fff;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+.bench-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+.bench-svg-layer,
+.bench-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.bench-panel {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, calc(100vw - 32px));
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(12, 12, 24, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+.bench-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.bench-title {
+  justify-content: space-between;
+  font-size: 16px;
+}
+.bench-row label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+.bench input[type="range"] {
+  width: 160px;
+  accent-color: #7aa8ff;
+}
+
+.bench button {
+  font: inherit;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 7px 16px;
+  cursor: pointer;
+}
+.bench button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.bench-run {
+  font-weight: 700;
+  background: linear-gradient(180deg, #7aa8ff, #5a86e6) !important;
+  border-color: transparent !important;
+}
+.bench-x {
+  padding: 5px 12px !important;
+  font-size: 12px;
+}
+.bench-seg {
+  display: inline-flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 3px;
+  border-radius: 999px;
+}
+.bench-seg button {
+  border: 0;
+  background: transparent;
+  padding: 5px 12px;
+  font-size: 12px;
+  opacity: 0.65;
+}
+.bench-seg button[data-on="true"] {
+  background: rgba(255, 255, 255, 0.16);
+  opacity: 1;
+}
+
+.bench-table {
+  width: 100%;
+  border-collapse: collapse;
+  font:
+    13px / 1.4 ui-monospace,
+    Menlo,
+    monospace;
+  margin-top: 4px;
+}
+.bench-table th,
+.bench-table td {
+  padding: 6px 8px;
+  text-align: right;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.bench-table th:first-child,
+.bench-table td:first-child {
+  text-align: left;
+  opacity: 0.7;
+}
+.bench-table td.good {
+  color: #5fd08a;
+}
+.bench-table td.ok {
+  color: #ffd23f;
+}
+.bench-table td.bad {
+  color: #ff6b6b;
+}
+.bench-note {
+  font-size: 11.5px;
+  line-height: 1.5;
+  opacity: 0.6;
+  margin: 12px 0 0;
+}

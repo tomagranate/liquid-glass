@@ -1,0 +1,198 @@
+/* Stage-driven glass components.
+   The glass *material* is drawn by <GlassStage>'s WebGL overlay at each host's
+   bounding box. These hosts are therefore transparent — they only provide
+   layout, hit-testing, a drop shadow for depth, and (via .glass-fg) labels that
+   sit above the lens overlay. No SVG filters, no backdrop. */
+
+.glassx {
+  --fg: rgba(255, 255, 255, 0.96);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--fg);
+  box-sizing: border-box;
+}
+.glassx *,
+.glassx *::before,
+.glassx *::after {
+  box-sizing: border-box;
+}
+
+/* ── Button ──────────────────────────────────────────────────────────────── */
+.glassx-button {
+  position: relative;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.78em 1.5em;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.3);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.glassx-button .glass-fg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.glassx-button:active {
+  transform: scale(0.97);
+}
+
+/* ── Toggle group ────────────────────────────────────────────────────────── */
+.glassx-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.glassx-toggle-item {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.55em 1.1em;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  opacity: 0.62;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: opacity 0.18s ease;
+}
+.glassx-toggle-item:hover {
+  opacity: 0.85;
+}
+.glassx-toggle-item[data-active="true"] {
+  opacity: 1;
+}
+/* The moving lens host — transparent; the overlay draws the glass here. */
+.glassx-toggle-indicator {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 0;
+  pointer-events: none;
+  transition: transform 0.34s cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+/* ── Switch ──────────────────────────────────────────────────────────────── */
+.glassx-switch {
+  position: relative;
+  width: 60px;
+  height: 34px;
+  flex: none;
+  cursor: pointer;
+  display: inline-block;
+}
+.glassx-switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: background 0.25s ease;
+}
+.glassx-switch[data-on="true"] .glassx-switch-track {
+  background: linear-gradient(180deg, #5fd08a, #36b06a);
+}
+.glassx-switch-thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.35);
+  transition: transform 0.28s cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+.glassx-switch[data-on="true"] .glassx-switch-thumb {
+  transform: translateX(26px);
+}
+
+/* ── Slider ──────────────────────────────────────────────────────────────── */
+.glassx-slider {
+  position: relative;
+  width: 280px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  user-select: none;
+  touch-action: none;
+}
+.glassx-slider-track {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.glassx-slider-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7aa8ff, #d58cff);
+}
+.glassx-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.32);
+}
+.glassx-slider-thumb:active {
+  cursor: grabbing;
+}
+
+/* ── Magnifier ───────────────────────────────────────────────────────────── */
+.magnifier-toggle {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 60;
+  font:
+    600 13px / 1 ui-sans-serif,
+    system-ui,
+    sans-serif;
+  color: #fff;
+  padding: 11px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(20, 20, 36, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+.magnifier-lens {
+  position: fixed;
+  left: 0;
+  top: 0;
+  /* Above all page content (incl. .glass-fg labels) so the disc covers the real
+     text/components it sits on — otherwise you'd see both the crisp original and
+     the refracted copy. The canvas is transparent outside the disc, so content
+     outside the lens is unaffected. */
+  z-index: 2147483000;
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.22),
+    0 16px 44px rgba(0, 0, 0, 0.45);
+}

@@ -1,0 +1,44 @@
+/* Structural styles for the liquid-glass layers. The *material* (refraction
+   filter, tint, rim light, shadow) is applied by the core via inline styles;
+   these rules just lay the layers out. */
+
+.lq {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* The layer that gets `filter: url(#glass)`. It holds the backdrop copy. */
+.lq-refraction {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* Promote to its own layer; keeps the filter cheap to recomposite on move. */
+  will-change: filter;
+}
+
+/* A copy of the page background, sized to the viewport and offset by the core
+   so it lines up with the real background behind the glass. */
+.lq-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+/* Tint + rim light + hairline border + drop shadow. */
+.lq-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* The real, interactive content rides on top. */
+.lq-content {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+}
