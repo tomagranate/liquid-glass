@@ -3,33 +3,24 @@
  *
  * A liquid-glass (Apple-style refraction) effect for the web.
  *
- * - WebGL stage + React components (the default): wrap your app in
- *   {@link GlassStage} and use the components, or {@link useGlassLens} to turn
- *   any element into a lens. Import the stylesheet once:
- *   `import "@tomagranate/liquid-glass/styles.css"`.
  * - Vanilla SVG-filter backend ({@link applyGlass}): framework-independent,
- *   cross-browser, refracts a copy of the backdrop.
+ *   cross-browser, refracts a copy of the backdrop. The recommended default
+ *   for most sites and apps.
+ * - React kit: wrap your app in {@link GlassStage} and turn any element into a
+ *   lens with {@link useGlassLens}. Import the stylesheet once:
+ *   `import "@tomagranate/liquid-glass/styles.css"`.
  * - Low-level WebGL renderers ({@link GlassFieldGL}, {@link GlassCompositor},
  *   {@link WebGLGlass}) for custom pipelines and texture sources.
+ *
+ * Pre-styled components (button, switch, slider, toggle, magnifier) are not
+ * shipped — see `examples/demo/src/glass` for reference implementations you can
+ * copy and restyle.
  */
 
-// ── React: WebGL stage + components ─────────────────────────────────────────
+// ── React kit: WebGL stage + lens hook ──────────────────────────────────────
 export { GlassStage, useGlassStage } from "./react/GlassStage.js";
 export type { GlassStageApi } from "./react/GlassStage.js";
 export { useGlassLens } from "./react/useGlassLens.js";
-export { GlassButton } from "./react/GlassButton.js";
-export type { GlassButtonProps } from "./react/GlassButton.js";
-export { GlassSwitch } from "./react/GlassSwitch.js";
-export type { GlassSwitchProps } from "./react/GlassSwitch.js";
-export { GlassSlider } from "./react/GlassSlider.js";
-export type { GlassSliderProps } from "./react/GlassSlider.js";
-export { GlassToggleGroup } from "./react/GlassToggleGroup.js";
-export type {
-  GlassToggleGroupProps,
-  ToggleOption,
-} from "./react/GlassToggleGroup.js";
-export { Magnifier } from "./react/Magnifier.js";
-export type { MagnifierProps } from "./react/Magnifier.js";
 
 // ── Core: WebGL renderers ───────────────────────────────────────────────────
 export { GlassFieldGL } from "./core/glass-field.js";

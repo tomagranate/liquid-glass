@@ -3,31 +3,18 @@ import {
   applyGlass,
   buildGlassFilter,
   createGlassController,
-  GlassButton,
   GlassCompositor,
   GlassFieldGL,
-  GlassSlider,
   GlassStage,
-  GlassSwitch,
-  GlassToggleGroup,
   generateDisplacementMap,
-  Magnifier,
   useGlassLens,
   useGlassStage,
   WebGLGlass,
 } from "./index.js";
 
 describe("public API", () => {
-  it("exports the React components", () => {
+  it("exports the React kit", () => {
     expect(GlassStage).toBeTypeOf("function");
-    expect(GlassButton).toBeTypeOf("function");
-    expect(GlassSwitch).toBeTypeOf("function");
-    expect(GlassSlider).toBeTypeOf("function");
-    expect(GlassToggleGroup).toBeTypeOf("function");
-    expect(Magnifier).toBeTypeOf("function");
-  });
-
-  it("exports the hooks", () => {
     expect(useGlassLens).toBeTypeOf("function");
     expect(useGlassStage).toBeTypeOf("function");
   });

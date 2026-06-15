@@ -5,8 +5,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { LensMaterial } from "../core/types.js";
-import { useGlassLens } from "./useGlassLens.js";
+import type { LensMaterial } from "@tomagranate/liquid-glass";
+import { useGlassLens } from "@tomagranate/liquid-glass";
 import "./components.css";
 
 export interface ToggleOption {
