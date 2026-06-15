@@ -34,7 +34,7 @@ export function GlassSlider({
   const canvasRef = useGlassLens(thumbRef, {
     radius: 9999,
     depth: 9,
-    scale: 42,
+    scale: 25,
     chroma: 0.3,
     specular: 0.6,
     rimLight: 1,

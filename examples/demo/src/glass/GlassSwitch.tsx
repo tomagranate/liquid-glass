@@ -25,7 +25,7 @@ export function GlassSwitch({
   const canvasRef = useGlassLens(thumbRef, {
     radius: 9999,
     depth: 8,
-    scale: 34,
+    scale: 20,
     chroma: 0.35,
     specular: 0.55,
     rimLight: 1,
