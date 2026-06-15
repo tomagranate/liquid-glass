@@ -23,7 +23,7 @@ export function Magnifier({ size = 200 }: MagnifierProps) {
     {
       radius: 9999,
       depth: r * 0.5,
-      scale: 100,
+      scale: 60,
       chroma: 0.5,
       specular: 0.6,
       rimLight: 1,

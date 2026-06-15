@@ -42,7 +42,7 @@ export function GlassToggleGroup({
   const canvasRef = useGlassLens(indicatorRef, {
     radius: 9999,
     depth: 7,
-    scale: 26,
+    scale: 16,
     chroma: 0.22,
     specular: 0.5,
     rimLight: 1,

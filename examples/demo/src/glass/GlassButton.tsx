@@ -23,7 +23,7 @@ export function GlassButton({
   const canvasRef = useGlassLens(ref, {
     radius: 9999,
     depth: 11,
-    scale: 58,
+    scale: 35,
     chroma: 0.5,
     specular: 0.5,
     rimLight: 0.9,
