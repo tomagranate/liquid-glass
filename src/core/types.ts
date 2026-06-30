@@ -1,4 +1,4 @@
-/** Material parameters shared by the WebGL renderers. */
+/** Material parameters for the {@link WebGLGlass} texture backend. */
 export interface LensMaterial {
   /** corner radius, CSS px (large value → pill/circle) */
   radius?: number;
@@ -10,10 +10,6 @@ export interface LensMaterial {
   chroma?: number;
   /** specular highlight strength, 0..1 */
   specular?: number;
-  /** CSS-like bevel/rim light strength, 0..1 */
-  rimLight?: number;
-  /** stacking order for the layered compositor (higher = on top) */
-  z?: number;
 }
 
 /** A lens rectangle, in CSS px relative to the canvas top-left. */

@@ -1,6 +1,6 @@
 import { type HTMLAttributes, useCallback, useEffect, useRef } from "react";
-import type { LensMaterial } from "@tomagranate/liquid-glass";
-import { useGlassLens } from "@tomagranate/liquid-glass";
+import type { GlassOptions } from "@tomagranate/liquid-glass";
+import { useGlass } from "@tomagranate/liquid-glass";
 import "./components.css";
 
 export interface GlassSliderProps
@@ -11,12 +11,24 @@ export interface GlassSliderProps
   step?: number;
   onChange?: (value: number) => void;
   /** Per-instance glass material overrides for the thumb. */
-  glass?: LensMaterial;
+  glass?: GlassOptions;
 }
 
+const THUMB_GLASS: GlassOptions = {
+  radius: 999,
+  depth: 7,
+  scale: 22,
+  chroma: 0.3,
+  specular: 0.6,
+  rimLight: 1,
+  tint: "rgba(255,255,255,0.1)",
+  shadow: "0 3px 10px rgba(0,0,0,0.32)",
+};
+
 /**
- * A glass slider. The thumb is a lens travelling along the track, refracting the
- * live background beneath it; the value stays readable through the glass.
+ * A glass slider. The thumb is a lens travelling along the track; its
+ * `feDisplacementMap` refracts a copy of the track + colored fill beneath it
+ * (refraction-target mode), so the fill bends through the thumb as it moves.
  */
 export function GlassSlider({
   value,
@@ -28,17 +40,14 @@ export function GlassSlider({
   ...rest
 }: GlassSliderProps) {
   const trackRef = useRef<HTMLDivElement>(null);
-  const thumbRef = useRef<HTMLSpanElement>(null);
+  const refSrcRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
-
-  const canvasRef = useGlassLens(thumbRef, {
-    radius: 9999,
-    depth: 9,
-    scale: 25,
-    chroma: 0.3,
-    specular: 0.6,
-    rimLight: 1,
+  // Refract a tall, full-width source (not the thin track) so the thumb's rim
+  // never samples past the colored copy into the dark page behind it.
+  const g = useGlass({
+    ...THUMB_GLASS,
     ...glass,
+    alignTo: () => refSrcRef.current,
   });
 
   const pct = ((value - min) / (max - min)) * 100;
@@ -97,21 +106,29 @@ export function GlassSlider({
       >
         <div className="glassx-slider-fill" style={{ width: `${pct}%` }} />
       </div>
-      <span
-        ref={thumbRef}
-        className="glassx-slider-thumb"
+      {/* Invisible refraction source: full track width, tall enough to cover
+          the thumb + displacement margin. The thumb refracts a copy of this. */}
+      <div
+        ref={refSrcRef}
+        className="glassx-slider-refsrc"
+        aria-hidden="true"
+      />
+      <div
+        ref={g.hostRef}
+        className="glassx-slider-thumb lq"
         style={{ left: `${pct}%` }}
         onPointerDown={(e) => {
           e.stopPropagation();
           dragging.current = true;
         }}
       >
-        <canvas
-          ref={canvasRef}
-          className="glass-lens-canvas"
-          aria-hidden="true"
-        />
-      </span>
+        <div ref={g.refractionRef} className="lq-refraction">
+          <div ref={g.backdropRef} className="lq-backdrop glassx-track-copy">
+            <div className="glassx-slider-fill" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+        <div ref={g.sheenRef} className="lq-sheen" />
+      </div>
     </div>
   );
 }

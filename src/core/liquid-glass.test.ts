@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
-import { buildGlassFilter, generateDisplacementMap } from "./liquid-glass.js";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  buildGlassFilter,
+  createGlassController,
+  generateDisplacementMap,
+} from "./liquid-glass.js";
 
 function countByName(el: Element, name: string): number {
   return Array.from(el.querySelectorAll("*")).filter(
@@ -60,6 +64,62 @@ describe("buildGlassFilter", () => {
       (m) => m.getAttribute("result") === "spec",
     );
     expect(spec).toBeTruthy();
+  });
+});
+
+describe("createGlassController", () => {
+  // jsdom lacks ResizeObserver and a real rAF; stub them so the controller can
+  // wire up without scheduling a live ticker.
+  beforeAll(() => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+  afterAll(() => vi.unstubAllGlobals());
+
+  function layers() {
+    const host = document.createElement("div");
+    const refraction = document.createElement("div");
+    const backdrop = document.createElement("div");
+    const sheen = document.createElement("div");
+    refraction.appendChild(backdrop);
+    host.append(refraction, sheen);
+    document.body.appendChild(host);
+    return { host, refraction, backdrop, sheen };
+  }
+
+  it("wires the controller API and tears down cleanly", () => {
+    const { host, refraction, backdrop, sheen } = layers();
+    const ctrl = createGlassController(host, { refraction, backdrop, sheen });
+    expect(ctrl.update).toBeTypeOf("function");
+    expect(ctrl.refresh).toBeTypeOf("function");
+    expect(ctrl.destroy).toBeTypeOf("function");
+    expect(() => ctrl.destroy()).not.toThrow();
+  });
+
+  it("accepts refraction-target mode (alignTo) and positions the backdrop", () => {
+    const { host, refraction, backdrop, sheen } = layers();
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    const ctrl = createGlassController(
+      host,
+      { refraction, backdrop, sheen },
+      { alignTo: () => target },
+    );
+    // In refraction-target mode the backdrop is absolutely positioned and sized
+    // to overlay the aligned element. Force a reposition (the live ticker is
+    // stubbed off); jsdom rects are all-zero, so it lands at 0px.
+    expect(backdrop.style.position).toBe("absolute");
+    ctrl._reposition(true);
+    expect(backdrop.style.width).toBe("0px");
+    ctrl.destroy();
   });
 });
 

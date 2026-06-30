@@ -26,6 +26,8 @@
   left: 0;
   background-repeat: no-repeat;
   background-size: cover;
+  /* Offset by the core via transform; hint the compositor. */
+  will-change: transform;
 }
 
 /* Tint + rim light + hairline border + drop shadow. */

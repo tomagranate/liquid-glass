@@ -1,5 +1,25 @@
 :root {
   color-scheme: dark;
+
+  /* The surface every glass element refracts. The SVG engine reads this from
+     `--lq-backdrop` and keeps a copy aligned to the viewport behind each lens. */
+  --lq-backdrop:
+    radial-gradient(
+      1200px 820px at 12% 8%,
+      #2a1f6b 0%,
+      rgba(42, 31, 107, 0) 60%
+    ),
+    radial-gradient(
+      1000px 720px at 88% 92%,
+      #7a2bb0 0%,
+      rgba(122, 43, 176, 0) 55%
+    ),
+    radial-gradient(
+      900px 700px at 70% 20%,
+      #1f6b63 0%,
+      rgba(31, 107, 99, 0) 50%
+    ),
+    linear-gradient(135deg, #0b1030 0%, #160b2e 50%, #06121f 100%);
 }
 
 * {
@@ -10,18 +30,30 @@ body,
 #root {
   margin: 0;
   min-height: 100%;
-  background: #05060d; /* shown only until the WebGL gradient paints */
 }
 body {
   font-family:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: #fff;
+  background-color: #05060d;
+  background-image: var(--lq-backdrop);
+  /* Glue the background to the viewport so it matches the viewport-aligned
+     backdrop copy the glass refracts (keeps refraction registered on scroll). */
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
 }
 
 .page {
   max-width: 940px;
   margin: 0 auto;
   padding: 72px 24px 160px;
+}
+
+/* Marker for content that rides above a glass surface's refraction/sheen. */
+.glass-fg {
+  position: relative;
+  z-index: 2;
 }
 
 .title {
@@ -37,6 +69,9 @@ body {
   max-width: 64ch;
   margin: 0 0 44px;
   line-height: 1.55;
+}
+.subtitle a {
+  color: #c9b8ff;
 }
 
 .section {
@@ -67,20 +102,16 @@ body {
   min-width: 3ch;
 }
 
-/* The tunable playground surface — a transparent host; the stage draws its
-   glass and the label sits on top. */
+/* The tunable playground surface — a real glass surface (backdrop-clone). */
 .playground-glass {
-  position: relative;
   width: 240px;
   height: 130px;
-  border-radius: 28px;
-  display: grid;
-  place-items: center;
   font-weight: 700;
   font-size: 18px;
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.34);
 }
-.playground-glass .glass-fg {
+.playground-glass .lq-content {
+  display: grid;
+  place-items: center;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 
@@ -101,26 +132,4 @@ body {
 .controls input[type="range"] {
   width: 150px;
   accent-color: #fff;
-}
-
-.bench-open {
-  position: fixed;
-  bottom: 24px;
-  left: 24px;
-  z-index: 60;
-  font:
-    600 13px / 1 ui-sans-serif,
-    system-ui,
-    sans-serif;
-  color: #fff;
-  padding: 11px 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(20, 20, 36, 0.55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  cursor: pointer;
-}
-.bench-open:hover {
-  background: rgba(40, 40, 70, 0.7);
 }

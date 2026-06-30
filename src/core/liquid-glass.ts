@@ -61,6 +61,13 @@ export interface DisplacementMapOptions {
   specular?: number;
   /** light direction, degrees */
   specularAngle?: number;
+  /**
+   * Neutral (no-bend) margin, CSS px, left around the lens shape. The rounded
+   * rect is inset by this much so the map fades to flat grey before the edge —
+   * needed when the map is placed as a movable sub-lens inside a larger filter,
+   * so the bend transitions seamlessly into the surrounding (flat) surface.
+   */
+  inset?: number;
 }
 
 /** Render the displacement map and return a PNG data URL (or null if no 2D ctx). */
@@ -75,6 +82,7 @@ export function generateDisplacementMap(
     dpr = 2,
     specular = 0,
     specularAngle = 135,
+    inset = 0,
   } = o;
 
   const w = Math.max(1, Math.round(width * dpr));
@@ -88,8 +96,13 @@ export function generateDisplacementMap(
   const img = ctx.createImageData(w, h);
   const data = img.data;
 
-  const hw = w / 2;
-  const hh = h / 2;
+  // Half-extents of the lens shape, shrunk by `inset` so a flat-grey margin
+  // surrounds it (see `inset` docs).
+  const ins = Math.max(0, inset * dpr);
+  const cx = w / 2;
+  const cy = h / 2;
+  const hw = cx - ins;
+  const hh = cy - ins;
   const r = Math.min(Math.max(0, radius * dpr), Math.min(hw, hh));
   const rim = Math.max(1, depth * dpr);
 
@@ -100,8 +113,8 @@ export function generateDisplacementMap(
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const idx = (y * w + x) * 4;
-      const px = x + 0.5 - hw;
-      const py = y + 0.5 - hh;
+      const px = x + 0.5 - cx;
+      const py = y + 0.5 - cy;
 
       const sdf = sdfRoundRect(px, py, hw, hh, r);
 
@@ -181,11 +194,19 @@ export interface GlassFilterOptions {
   chroma?: number;
   /** specular blend strength, 0..1 */
   specular?: number;
+  /**
+   * Place the displacement map as a movable sub-lens at this box (CSS px, in the
+   * host's coordinate space) instead of filling the whole element. The rest of
+   * the surface is flat grey (no bend), so a small lens can slide across a large
+   * static backdrop — move it cheaply afterwards with {@link moveFilterLens},
+   * which is how a handle animates without repainting or regenerating the map.
+   */
+  lens?: { x: number; y: number; width: number; height: number };
 }
 
 /** Build the SVG `<filter>` that bends the backdrop copy. */
 export function buildGlassFilter(o: GlassFilterOptions): SVGFilterElement {
-  const { id, mapUrl, scale, blur = 0, chroma = 0, specular = 0 } = o;
+  const { id, mapUrl, scale, blur = 0, chroma = 0, specular = 0, lens } = o;
 
   const filter = svgEl("filter", {
     id,
@@ -198,17 +219,46 @@ export function buildGlassFilter(o: GlassFilterOptions): SVGFilterElement {
     height: "160%",
   });
 
-  filter.appendChild(
-    svgEl("feImage", {
-      href: mapUrl,
-      preserveAspectRatio: "none",
-      x: "0",
-      y: "0",
-      width: "100%",
-      height: "100%",
-      result: "map",
-    }),
-  );
+  if (lens) {
+    // Flat-grey field everywhere (R=G=128 → no bend), with the bump bitmap
+    // placed at the lens box. Sliding the lens is just moving the feImage —
+    // the field and the displacement chain are untouched (the map stays the
+    // same, only the filter's region shifts).
+    filter.appendChild(
+      svgEl("feFlood", {
+        "flood-color": "rgb(128,128,128)",
+        "flood-opacity": "1",
+        result: "lqfield",
+      }),
+    );
+    filter.appendChild(
+      svgEl("feImage", {
+        href: mapUrl,
+        preserveAspectRatio: "none",
+        x: String(lens.x),
+        y: String(lens.y),
+        width: String(lens.width),
+        height: String(lens.height),
+        result: "lqbump",
+      }),
+    );
+    const merge = svgEl("feMerge", { result: "map" });
+    merge.appendChild(svgEl("feMergeNode", { in: "lqfield" }));
+    merge.appendChild(svgEl("feMergeNode", { in: "lqbump" }));
+    filter.appendChild(merge);
+  } else {
+    filter.appendChild(
+      svgEl("feImage", {
+        href: mapUrl,
+        preserveAspectRatio: "none",
+        x: "0",
+        y: "0",
+        width: "100%",
+        height: "100%",
+        result: "map",
+      }),
+    );
+  }
 
   let source = "SourceGraphic";
   if (blur > 0) {
@@ -312,15 +362,55 @@ export function buildGlassFilter(o: GlassFilterOptions): SVGFilterElement {
   return filter;
 }
 
-/* ── Backdrop alignment ticker ────────────────────────────────────────────── */
-const _active = new Set<GlassController>();
-let _raf = 0;
-function tick(): void {
-  for (const c of _active) c._reposition();
-  _raf = _active.size ? requestAnimationFrame(tick) : 0;
+/**
+ * Slide a sub-lens (built via {@link buildGlassFilter} with `lens`) to a new x/y
+ * by repositioning its bump bitmap. No map regeneration, no backdrop repaint —
+ * just two attribute writes — so it stays inside the frame budget even on Safari.
+ */
+export function moveFilterLens(
+  filter: SVGFilterElement,
+  x: number,
+  y: number,
+): void {
+  const bump = filter.querySelector('feImage[result="lqbump"]');
+  if (!bump) return;
+  bump.setAttribute("x", String(x));
+  bump.setAttribute("y", String(y));
 }
-function startTicker(): void {
-  if (!_raf && _active.size) _raf = requestAnimationFrame(tick);
+
+/* ── Backdrop alignment ────────────────────────────────────────────────────
+   A backdrop copy must stay registered with whatever it refracts:
+   - clone mode follows the page, so it only needs realigning on scroll/resize;
+   - refraction-target (`alignTo`) mode tracks an element that can move on its
+     own, so those controllers are realigned every frame.
+   The previous design ran one perpetual rAF over *every* controller, each doing
+   a `getBoundingClientRect` (a forced layout read) per frame. With several glass
+   elements present that continuous churn made Safari's pre-click compositing
+   flush slow enough to noticeably delay click handling. So clone-mode
+   controllers stay off the rAF entirely and ride scroll/resize instead; only
+   `alignTo` controllers are ticked. */
+const _all = new Set<GlassController>();
+const _live = new Set<GlassController>();
+let _raf = 0;
+function tickLive(): void {
+  for (const c of _live) c._reposition();
+  _raf = _live.size ? requestAnimationFrame(tickLive) : 0;
+}
+function startLive(): void {
+  if (!_raf && _live.size) _raf = requestAnimationFrame(tickLive);
+}
+let _scrollBound = false;
+function repositionAll(): void {
+  for (const c of _all) c._reposition();
+}
+function bindScroll(): void {
+  if (_scrollBound || typeof window === "undefined") return;
+  window.addEventListener("scroll", repositionAll, {
+    passive: true,
+    capture: true,
+  });
+  window.addEventListener("resize", repositionAll);
+  _scrollBound = true;
 }
 
 /** A reference element (or accessor) for "refraction target" mode. */
@@ -424,6 +514,25 @@ export function createGlassController(
   let lastTop = Number.NaN;
   let lastBW = Number.NaN;
   let lastBH = Number.NaN;
+  // Cache the displacement map (a canvas → PNG, the expensive part) so changes
+  // that don't affect geometry can reuse it.
+  let cachedMapUrl: string | null = null;
+  let mapSig = "";
+
+  /** Signature of every option that requires rebuilding the map or the filter.
+   *  CSS-only props (backdrop, tint, rimLight, shadow) are deliberately absent,
+   *  so colour/opacity changes skip the costly regenerate entirely. */
+  const rebuildSig = (): string =>
+    [
+      opts.radius,
+      opts.depth,
+      opts.scale,
+      opts.blur,
+      opts.chroma,
+      opts.specular,
+      opts.specularAngle,
+      opts.dpr,
+    ].join("|");
 
   function radiusPx(w: number, h: number): number {
     const r = opts.radius;
@@ -444,7 +553,21 @@ export function createGlassController(
     backdrop.style.position = "absolute";
     backdrop.style.pointerEvents = "none";
     if (!opts.alignTo) {
-      backdrop.style.background = resolveBackdrop(opts.backdrop);
+      const bg = resolveBackdrop(opts.backdrop);
+      if (opts.backdrop) {
+        // An explicit backdrop is a local fill — paint it across the (small) box.
+        backdrop.style.backgroundImage = "";
+        backdrop.style.background = bg;
+      } else {
+        // Page clone: a viewport-sized gradient, but shown through a small box
+        // sliced to the element's position (size/position set in `_reposition`).
+        // Never give the filter a viewport-sized source graphic — that stalls
+        // Safari's compositor and, with several glass elements, makes its
+        // pre-click flush slow enough to delay click handling.
+        backdrop.style.background = "";
+        backdrop.style.backgroundImage = bg;
+        backdrop.style.backgroundRepeat = "no-repeat";
+      }
     }
 
     if (sheen) {
@@ -474,21 +597,28 @@ export function createGlassController(
     if (w < 2 || h < 2) return;
 
     const rad = syncRadius(w, h);
-    const mapUrl = generateDisplacementMap({
-      width: w,
-      height: h,
-      radius: rad,
-      depth: opts.depth,
-      dpr: opts.dpr,
-      specular: opts.specular,
-      specularAngle: opts.specularAngle,
-    });
-    if (!mapUrl) return;
+
+    // The map depends only on geometry; regenerate it just when that changes.
+    const sig = `${w}x${h}|${rad}|${opts.depth}|${opts.specular}|${opts.specularAngle}|${opts.dpr}`;
+    if (sig !== mapSig || !cachedMapUrl) {
+      const mapUrl = generateDisplacementMap({
+        width: w,
+        height: h,
+        radius: rad,
+        depth: opts.depth,
+        dpr: opts.dpr,
+        specular: opts.specular,
+        specularAngle: opts.specularAngle,
+      });
+      if (!mapUrl) return;
+      cachedMapUrl = mapUrl;
+      mapSig = sig;
+    }
 
     const id = nextId();
     const newFilter = buildGlassFilter({
       id,
-      mapUrl,
+      mapUrl: cachedMapUrl,
       scale: opts.scale,
       blur: opts.blur,
       chroma: opts.chroma,
@@ -508,10 +638,7 @@ export function createGlassController(
 
   function _reposition(force?: boolean): void {
     const rect = host.getBoundingClientRect();
-    let left: number;
-    let top: number;
-    let width: number;
-    let height: number;
+
     if (opts.alignTo) {
       const ref =
         typeof opts.alignTo === "function" ? opts.alignTo() : opts.alignTo;
@@ -520,32 +647,49 @@ export function createGlassController(
           ? ref.getBoundingClientRect()
           : ref;
       if (!a) return;
-      width = a.width;
-      height = a.height;
-      left = a.left - rect.left;
-      top = a.top - rect.top;
-    } else {
-      width = window.innerWidth;
-      height = window.innerHeight;
-      left = -rect.left;
-      top = -rect.top;
-    }
-    if (
-      !force &&
-      left === lastLeft &&
-      top === lastTop &&
-      width === lastBW &&
-      height === lastBH
-    )
+      const left = a.left - rect.left;
+      const top = a.top - rect.top;
+      if (
+        !force &&
+        left === lastLeft &&
+        top === lastTop &&
+        a.width === lastBW &&
+        a.height === lastBH
+      )
+        return;
+      lastLeft = left;
+      lastTop = top;
+      lastBW = a.width;
+      lastBH = a.height;
+      backdrop.style.width = `${a.width}px`;
+      backdrop.style.height = `${a.height}px`;
+      backdrop.style.transform = `translate(${left}px, ${top}px)`;
       return;
-    lastLeft = left;
-    lastTop = top;
-    lastBW = width;
-    lastBH = height;
-    backdrop.style.left = `${left}px`;
-    backdrop.style.top = `${top}px`;
-    backdrop.style.width = `${width}px`;
-    backdrop.style.height = `${height}px`;
+    }
+
+    // Clone mode: a small box (element + sampling margin), not a viewport-sized
+    // layer. The margin covers the filter's reach (~30% past each edge + `scale`
+    // px of displacement) so the rim never samples past the copy.
+    const mx = Math.ceil(0.4 * rect.width + opts.scale);
+    const my = Math.ceil(0.4 * rect.height + opts.scale);
+    const width = rect.width + 2 * mx;
+    const height = rect.height + 2 * my;
+    if (!opts.backdrop) {
+      // Slice the viewport-anchored page gradient to this box's screen position,
+      // so it lines up seamlessly with the real page behind the glass. (For an
+      // explicit local-fill backdrop, the fill already covers the box.)
+      backdrop.style.backgroundSize = `${window.innerWidth}px ${window.innerHeight}px`;
+      backdrop.style.backgroundPosition = `${mx - rect.left}px ${my - rect.top}px`;
+    }
+    if (force || width !== lastBW || height !== lastBH) {
+      lastBW = width;
+      lastBH = height;
+      lastLeft = -mx;
+      lastTop = -my;
+      backdrop.style.width = `${width}px`;
+      backdrop.style.height = `${height}px`;
+      backdrop.style.transform = `translate(${-mx}px, ${-my}px)`;
+    }
   }
 
   applyStatic();
@@ -561,17 +705,37 @@ export function createGlassController(
   });
   ro.observe(host);
 
+  // Per-frame realignment is only needed in refraction-target mode (the target
+  // can move on its own); clone mode rides scroll/resize.
+  function syncLive(): void {
+    if (opts.alignTo) {
+      if (!_live.has(ctrl)) {
+        _live.add(ctrl);
+        startLive();
+      }
+    } else {
+      _live.delete(ctrl);
+    }
+  }
+
   const ctrl: GlassController = {
     _reposition,
     update(patch: GlassOptions) {
+      const prevSig = rebuildSig();
       Object.assign(opts, patch);
       applyStatic();
-      regenerate();
+      // Rebuild the map/filter only when a prop that affects them changed.
+      // A pure CSS change (e.g. a switch's on/off colour) just restyles —
+      // no canvas/PNG/filter work — so the animation stays smooth.
+      if (rebuildSig() !== prevSig) regenerate();
+      syncLive();
+      _reposition();
     },
     refresh: regenerate,
     destroy() {
-      _active.delete(ctrl);
-      if (!_active.size && _raf) {
+      _all.delete(ctrl);
+      _live.delete(ctrl);
+      if (!_live.size && _raf) {
         cancelAnimationFrame(_raf);
         _raf = 0;
       }
@@ -580,8 +744,9 @@ export function createGlassController(
       refraction.style.filter = "";
     },
   };
-  _active.add(ctrl);
-  startTicker();
+  _all.add(ctrl);
+  bindScroll();
+  syncLive();
   return ctrl;
 }
 

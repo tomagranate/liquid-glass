@@ -1,19 +1,34 @@
-import { type HTMLAttributes, useRef } from "react";
-import type { LensMaterial } from "@tomagranate/liquid-glass";
-import { useGlassLens } from "@tomagranate/liquid-glass";
+import type { HTMLAttributes } from "react";
+import type { GlassOptions } from "@tomagranate/liquid-glass";
+import { useGlass } from "@tomagranate/liquid-glass";
 import "./components.css";
+
+const TRACK_ON = "linear-gradient(180deg, #5fd08a, #36b06a)";
+const TRACK_OFF = "linear-gradient(180deg, #6c6f80, #494c5e)";
 
 export interface GlassSwitchProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "onChange"> {
   checked?: boolean;
   onChange?: (checked: boolean) => void;
   /** Per-instance glass material overrides for the thumb. */
-  glass?: LensMaterial;
+  glass?: GlassOptions;
 }
 
+const THUMB_GLASS: GlassOptions = {
+  radius: 999,
+  depth: 6,
+  scale: 18,
+  chroma: 0.3,
+  specular: 0.5,
+  rimLight: 1,
+  tint: "rgba(255,255,255,0.12)",
+  shadow: "0 2px 7px rgba(0,0,0,0.35)",
+};
+
 /**
- * A glass on/off switch. The thumb is a lens that refracts the live background
- * as it slides — a moving glass highlight.
+ * A glass on/off switch. The thumb is a glass lens whose `feDisplacementMap`
+ * refracts the track color beneath it. The area under the thumb is a single
+ * color, so it refracts a solid backdrop — no edge for the rim to over-sample.
  */
 export function GlassSwitch({
   checked = false,
@@ -21,15 +36,10 @@ export function GlassSwitch({
   glass,
   ...rest
 }: GlassSwitchProps) {
-  const thumbRef = useRef<HTMLSpanElement>(null);
-  const canvasRef = useGlassLens(thumbRef, {
-    radius: 9999,
-    depth: 8,
-    scale: 20,
-    chroma: 0.35,
-    specular: 0.55,
-    rimLight: 1,
+  const g = useGlass({
+    ...THUMB_GLASS,
     ...glass,
+    backdrop: checked ? TRACK_ON : TRACK_OFF,
   });
 
   return (
@@ -49,13 +59,12 @@ export function GlassSwitch({
       {...rest}
     >
       <span className="glassx-switch-track" />
-      <span ref={thumbRef} className="glassx-switch-thumb">
-        <canvas
-          ref={canvasRef}
-          className="glass-lens-canvas"
-          aria-hidden="true"
-        />
-      </span>
+      <div ref={g.hostRef} className="glassx-switch-thumb lq">
+        <div ref={g.refractionRef} className="lq-refraction">
+          <div ref={g.backdropRef} className="lq-backdrop" />
+        </div>
+        <div ref={g.sheenRef} className="lq-sheen" />
+      </div>
     </div>
   );
 }

@@ -1,40 +1,37 @@
 /**
  * @tomagranate/liquid-glass
  *
- * A liquid-glass (Apple-style refraction) effect for the web.
+ * A liquid-glass (Apple-style refraction) effect for the web. The effect rests
+ * on a single SVG filter primitive, `feDisplacementMap`, applied to painted
+ * content. Nothing is sampled from underneath the glass — the content's own
+ * pixels are the ones moving, so it works in every browser with a plain
+ * `filter: url(#glass)`.
  *
- * - Vanilla SVG-filter backend ({@link applyGlass}): framework-independent,
- *   cross-browser, refracts a copy of the backdrop. The recommended default
- *   for most sites and apps.
- * - React kit: wrap your app in {@link GlassStage} and turn any element into a
- *   lens with {@link useGlassLens}. Import the stylesheet once:
- *   `import "@tomagranate/liquid-glass/styles.css"`.
- * - Low-level WebGL renderers ({@link GlassFieldGL}, {@link GlassCompositor},
- *   {@link WebGLGlass}) for custom pipelines and texture sources.
+ * - SVG engine ({@link applyGlass} / {@link createGlassController}):
+ *   framework-independent, cross-browser. The recommended default.
+ * - React bindings: {@link useGlass} drives the SVG engine from a component;
+ *   {@link useGlassTexture} drives {@link WebGLGlass} for surfaces SVG filters
+ *   can't read (a `<canvas>` QR code, a playing `<video>`). Import the stylesheet
+ *   once: `import "@tomagranate/liquid-glass/styles.css"`.
  *
- * Pre-styled components (button, switch, slider, toggle, magnifier) are not
- * shipped — see `examples/demo/src/glass` for reference implementations you can
- * copy and restyle.
+ * Pre-styled components (button, switch, slider, toggle, QR, video player) are
+ * not shipped — see `examples/demo/src/glass` for reference implementations you
+ * can copy and restyle.
  */
 
-// ── React kit: WebGL stage + lens hook ──────────────────────────────────────
-export { GlassStage, useGlassStage } from "./react/GlassStage.js";
-export type { GlassStageApi } from "./react/GlassStage.js";
-export { useGlassLens } from "./react/useGlassLens.js";
+// ── React bindings ──────────────────────────────────────────────────────────
+export { useGlass } from "./react/useGlass.js";
+export type { UseGlassResult } from "./react/useGlass.js";
+export { useGlassTexture } from "./react/useGlassTexture.js";
+export type { UseGlassTextureParams } from "./react/useGlassTexture.js";
 
-// ── Core: WebGL renderers ───────────────────────────────────────────────────
-export { GlassFieldGL } from "./core/glass-field.js";
-export type { GlassFieldOptions } from "./core/glass-field.js";
-export { GlassCompositor } from "./core/glass-compositor.js";
-export type { DomPlacement } from "./core/glass-compositor.js";
-export { WebGLGlass } from "./core/liquid-glass-webgl.js";
-
-// ── Core: vanilla SVG-filter backend ────────────────────────────────────────
+// ── Core: SVG `feDisplacementMap` engine ────────────────────────────────────
 export {
   applyGlass,
   createGlassController,
   generateDisplacementMap,
   buildGlassFilter,
+  moveFilterLens,
 } from "./core/liquid-glass.js";
 export type {
   GlassOptions,
@@ -44,6 +41,9 @@ export type {
   DisplacementMapOptions,
   GlassFilterOptions,
 } from "./core/liquid-glass.js";
+
+// ── Core: WebGL texture backend (canvas / video) ────────────────────────────
+export { WebGLGlass } from "./core/liquid-glass-webgl.js";
 
 // ── Shared types ────────────────────────────────────────────────────────────
 export type { LensMaterial, LensRect, LensSpec } from "./core/types.js";

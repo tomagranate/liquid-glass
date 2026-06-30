@@ -1,17 +1,28 @@
-import { type ButtonHTMLAttributes, useRef } from "react";
-import type { LensMaterial } from "@tomagranate/liquid-glass";
-import { useGlassLens } from "@tomagranate/liquid-glass";
+import type { ButtonHTMLAttributes } from "react";
+import type { GlassOptions } from "@tomagranate/liquid-glass";
+import { useGlass } from "@tomagranate/liquid-glass";
 import "./components.css";
 
 export interface GlassButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Per-instance glass material overrides. */
-  glass?: LensMaterial;
+  glass?: GlassOptions;
 }
 
+const BUTTON_GLASS: GlassOptions = {
+  radius: 999,
+  depth: 11,
+  scale: 36,
+  chroma: 0.4,
+  specular: 0.4,
+  rimLight: 0.85,
+  tint: "rgba(255,255,255,0.08)",
+};
+
 /**
- * A glass button. The whole button is a lens; the {@link GlassStage} draws the
- * glass (refracting the live background) at its box, the label rides on top.
+ * A glass button. The whole button is a glass surface (`.lq`) that refracts the
+ * page backdrop through an SVG `feDisplacementMap`; the label rides on top in
+ * `.lq-content` and stays crisp and clickable.
  */
 export function GlassButton({
   children,
@@ -19,30 +30,20 @@ export function GlassButton({
   className = "",
   ...rest
 }: GlassButtonProps) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const canvasRef = useGlassLens(ref, {
-    radius: 9999,
-    depth: 11,
-    scale: 35,
-    chroma: 0.5,
-    specular: 0.5,
-    rimLight: 0.9,
-    ...glass,
-  });
+  const g = useGlass<HTMLButtonElement>({ ...BUTTON_GLASS, ...glass });
 
   return (
     <button
-      ref={ref}
-      className={`glassx glassx-button ${className}`}
+      ref={g.hostRef}
+      className={`glassx glassx-button lq ${className}`}
       type="button"
       {...rest}
     >
-      <canvas
-        ref={canvasRef}
-        className="glass-lens-canvas"
-        aria-hidden="true"
-      />
-      <span className="glass-fg">{children}</span>
+      <div ref={g.refractionRef} className="lq-refraction">
+        <div ref={g.backdropRef} className="lq-backdrop" />
+      </div>
+      <div ref={g.sheenRef} className="lq-sheen" />
+      <span className="lq-content glass-fg">{children}</span>
     </button>
   );
 }
