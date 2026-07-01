@@ -7,10 +7,6 @@ so it's a plain `filter: url(#glass)` that works in **every** browser (Chromium,
 Firefox, Safari), no flags. Framework-independent, with optional React bindings
 and a WebGL texture backend for `<canvas>`/`<video>`.
 
-<!-- Demo media — drop a recording/screenshot in assets/ and reference it here.
-     See assets/README.md for what to capture. -->
-![Liquid glass demo](assets/hero.gif)
-
 ```sh
 npm install @tomagranate/liquid-glass
 ```
@@ -26,7 +22,10 @@ vanilla SVG backend has no dependencies and works on any DOM.
 import { applyGlass } from "@tomagranate/liquid-glass";
 import "@tomagranate/liquid-glass/styles.css";
 
-const handle = applyGlass(document.querySelector("#card"), {
+const card = document.querySelector<HTMLElement>("#card");
+if (!card) throw new Error("Missing #card");
+
+const handle = applyGlass(card, {
   radius: 18,
   chroma: 0.4,
 });
