@@ -30,7 +30,10 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "test": "vitest run",
+    "test": "npm run test:unit && npm run test:browser",
+    "test:unit": "vitest run --exclude 'src/**/*.browser.test.ts' --exclude 'src/**/*.browser.test.tsx'",
+    "pretest:browser": "playwright install chromium",
+    "test:browser": "vitest run --browser.enabled src/core/liquid-glass.browser.test.ts",
     "test:watch": "vitest",
     "prepublishOnly": "npm run clean && npm run build"
   },
@@ -67,14 +70,16 @@
     "@types/qrcode": "^1.5.5",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/browser": "^3.2.6",
     "jsdom": "^25.0.1",
+    "playwright": "^1.61.1",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
-    "vite": "^5.4.11",
-    "vitest": "^2.1.8"
+    "vite": "^6.4.3",
+    "vitest": "^3.2.6"
   }
 }
