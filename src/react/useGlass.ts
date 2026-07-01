@@ -24,9 +24,9 @@ export interface UseGlassResult<H extends HTMLElement = HTMLDivElement> {
   controllerRef: MutableRefObject<GlassController | null>;
 }
 
-/* Material props that, when changed, trigger a controller re-render. `alignTo`
-   and `backdrop` are passed through but not part of the key (alignTo is an
-   element/function; its identity is kept stable by callers). */
+/* Material props that, when changed, trigger a controller re-render. `backdrop`
+   is passed through but only string values are part of the key. `alignTo` is an
+   element/function and is tracked separately by identity below. */
 function materialKey(o: GlassOptions): string {
   return JSON.stringify([
     o.radius,
@@ -102,10 +102,11 @@ export function useGlass<H extends HTMLElement = HTMLDivElement>(
   }, []);
 
   const key = materialKey(options);
+  const alignToKey = options.alignTo ?? null;
   useEffect(() => {
     controllerRef.current?.update(optsRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, alignToKey]);
 
   return { hostRef, refractionRef, backdropRef, sheenRef, controllerRef };
 }
