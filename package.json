@@ -1,6 +1,6 @@
 {
   "name": "@tomagranate/liquid-glass",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A framework-independent liquid-glass (Apple-style refraction) effect for the web, built on the SVG feDisplacementMap filter, with React bindings and a WebGL texture backend for canvas/video.",
   "type": "module",
   "sideEffects": [
