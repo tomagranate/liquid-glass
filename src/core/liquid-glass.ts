@@ -758,6 +758,16 @@ export function applyGlass(
   host: HTMLElement,
   options: GlassOptions = {},
 ): GlassController {
+  const originalStyle = {
+    position: host.style.position,
+    overflow: host.style.overflow,
+    isolation: host.style.isolation,
+    background: host.style.background,
+    boxShadow: host.style.boxShadow,
+    borderRadius: host.style.borderRadius,
+  };
+  const shouldRestorePosition = getComputedStyle(host).position === "static";
+
   const content = document.createElement("div");
   content.className = "lq-content";
   while (host.firstChild) content.appendChild(host.firstChild);
@@ -776,7 +786,31 @@ export function applyGlass(
   host.appendChild(sheen);
   host.appendChild(content);
 
-  return createGlassController(host, { refraction, backdrop, sheen }, options);
+  const ctrl = createGlassController(
+    host,
+    { refraction, backdrop, sheen },
+    options,
+  );
+
+  return {
+    update: (patch: GlassOptions) => ctrl.update(patch),
+    refresh: () => ctrl.refresh(),
+    _reposition: (force?: boolean) => ctrl._reposition(force),
+    destroy() {
+      ctrl.destroy();
+      while (content.firstChild) host.appendChild(content.firstChild);
+      refraction.remove();
+      sheen.remove();
+      content.remove();
+      host.classList.remove("lq");
+      if (shouldRestorePosition) host.style.position = originalStyle.position;
+      host.style.overflow = originalStyle.overflow;
+      host.style.isolation = originalStyle.isolation;
+      host.style.background = originalStyle.background;
+      host.style.boxShadow = originalStyle.boxShadow;
+      host.style.borderRadius = originalStyle.borderRadius;
+    },
+  };
 }
 
 export default applyGlass;

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  applyGlass,
   buildGlassFilter,
   createGlassController,
   generateDisplacementMap,
@@ -120,6 +121,89 @@ describe("createGlassController", () => {
     ctrl._reposition(true);
     expect(backdrop.style.width).toBe("0px");
     ctrl.destroy();
+  });
+});
+
+describe("applyGlass", () => {
+  // jsdom lacks ResizeObserver and a real rAF; stub them so the controller can
+  // wire up without scheduling a live ticker.
+  beforeAll(() => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+  afterAll(() => vi.unstubAllGlobals());
+
+  it("restores vanilla DOM and styles on repeated destroy", () => {
+    const host = document.createElement("div");
+    const child = document.createElement("button");
+    child.textContent = "Hi";
+    host.appendChild(child);
+    host.style.position = "absolute";
+    host.style.overflow = "scroll";
+    host.style.isolation = "auto";
+    host.style.background = "rgb(1, 2, 3)";
+    host.style.boxShadow = "0px 0px 2px red";
+    host.style.borderRadius = "12px";
+    const originalStyle = {
+      position: host.style.position,
+      overflow: host.style.overflow,
+      isolation: host.style.isolation,
+      background: host.style.background,
+      boxShadow: host.style.boxShadow,
+      borderRadius: host.style.borderRadius,
+    };
+    const rectSpy = vi.spyOn(host, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 100,
+      bottom: 50,
+      width: 100,
+      height: 50,
+      toJSON: () => {},
+    });
+    const canvasSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+
+    const first = applyGlass(host);
+    expect(host.querySelector(".lq-refraction")).toBeTruthy();
+    expect(host.querySelector(".lq-sheen")).toBeTruthy();
+    expect(host.querySelector(".lq-content")).toBeTruthy();
+
+    first.destroy();
+    expect(Array.from(host.children)).toEqual([child]);
+    expect(host.querySelector(".lq-refraction")).toBeNull();
+    expect(host.querySelector(".lq-sheen")).toBeNull();
+    expect(host.querySelector(".lq-content")).toBeNull();
+    expect(host.classList.contains("lq")).toBe(false);
+    expect({
+      position: host.style.position,
+      overflow: host.style.overflow,
+      isolation: host.style.isolation,
+      background: host.style.background,
+      boxShadow: host.style.boxShadow,
+      borderRadius: host.style.borderRadius,
+    }).toEqual(originalStyle);
+
+    const second = applyGlass(host);
+    expect(host.querySelectorAll(".lq-content")).toHaveLength(1);
+    second.destroy();
+
+    expect(Array.from(host.children)).toEqual([child]);
+    expect(host.querySelector(".lq-content")).toBeNull();
+
+    canvasSpy.mockRestore();
+    rectSpy.mockRestore();
   });
 });
 
