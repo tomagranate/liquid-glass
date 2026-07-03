@@ -675,11 +675,12 @@ export function createGlassController(
     const width = rect.width + 2 * mx;
     const height = rect.height + 2 * my;
     if (!opts.backdrop) {
-      // Slice the viewport-anchored page gradient to this box's screen position,
-      // so it lines up seamlessly with the real page behind the glass. (For an
-      // explicit local-fill backdrop, the fill already covers the box.)
-      backdrop.style.backgroundSize = `${window.innerWidth}px ${window.innerHeight}px`;
-      backdrop.style.backgroundPosition = `${mx - rect.left}px ${my - rect.top}px`;
+      // Slice the viewport-anchored page background to this box's screen
+      // position, including the same cover-fit offset used by the real page.
+      // (For an explicit local-fill backdrop, the fill already covers the box.)
+      backdrop.style.backgroundSize =
+        "var(--lq-cover-width, 100vw) var(--lq-cover-height, 100vh)";
+      backdrop.style.backgroundPosition = `calc(${mx - rect.left}px + var(--lq-cover-x, 0px)) calc(${my - rect.top}px + var(--lq-cover-y, 0px))`;
     }
     if (force || width !== lastBW || height !== lastBH) {
       lastBW = width;

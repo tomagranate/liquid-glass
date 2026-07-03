@@ -1,6 +1,7 @@
 import {
   type HTMLAttributes,
   type ReactNode,
+  useContext,
   useLayoutEffect,
   useRef,
 } from "react";
@@ -9,6 +10,7 @@ import {
   generateDisplacementMap,
   moveFilterLens,
 } from "@tomagranate/liquid-glass";
+import { GlassCopyContext } from "./flat.ts";
 import "./components.css";
 
 export interface ToggleOption {
@@ -49,7 +51,33 @@ let _seq = 0;
  * by a GPU `transform`; a short rAF loop slides the lens to follow it so the two
  * stay locked together through the spring easing.
  */
-export function GlassToggleGroup({
+export function GlassToggleGroup(props: GlassToggleGroupProps) {
+  const flat = useContext(GlassCopyContext);
+  return flat ? <FlatToggleGroup {...props} /> : <ToggleGroupImpl {...props} />;
+}
+
+function FlatToggleGroup({
+  options,
+  value,
+  onChange: _onChange,
+  ...rest
+}: GlassToggleGroupProps) {
+  return (
+    <div className="glassx glassx-toggle glassx-flat-toggle" {...rest}>
+      {options.map((opt) => (
+        <span
+          key={opt.value}
+          className="glassx-toggle-item"
+          data-active={opt.value === value}
+        >
+          {opt.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ToggleGroupImpl({
   options,
   value,
   onChange,
@@ -166,17 +194,18 @@ export function GlassToggleGroup({
     pill.style.transition = "";
 
     // Keep the refracted copy small (row + margin), but paint the matching slice
-    // of the page's viewport-fixed gradient into it via background-size/position,
-    // so it still reads as the real page showing through — without handing the
-    // filter a viewport-sized source graphic.
+    // of the page's viewport-fixed, cover-fit background into it via
+    // background-size/position, so it still reads as the real page showing
+    // through — without handing the filter a viewport-sized source graphic.
     const M = BACKDROP_MARGIN;
     const align = () => {
       const r = surface.getBoundingClientRect();
       backdrop.style.width = `${r.width + 2 * M}px`;
       backdrop.style.height = `${r.height + 2 * M}px`;
       backdrop.style.transform = `translate(${-M}px, ${-M}px)`;
-      backdrop.style.backgroundSize = `${window.innerWidth}px ${window.innerHeight}px`;
-      backdrop.style.backgroundPosition = `${M - r.left}px ${M - r.top}px`;
+      backdrop.style.backgroundSize =
+        "var(--lq-cover-width, 100vw) var(--lq-cover-height, 100vh)";
+      backdrop.style.backgroundPosition = `calc(${M - r.left}px + var(--lq-cover-x, 0px)) calc(${M - r.top}px + var(--lq-cover-y, 0px))`;
     };
     align();
     window.addEventListener("scroll", align, { passive: true });

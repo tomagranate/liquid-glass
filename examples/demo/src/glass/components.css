@@ -10,7 +10,8 @@
 .glassx {
   --fg: rgba(255, 255, 255, 0.96);
   font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    InterVariable, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
   color: var(--fg);
   box-sizing: border-box;
   /* Kill the translucent tap flash mobile browsers paint on press. */
@@ -22,12 +23,59 @@
   box-sizing: border-box;
 }
 /* No focus box on pointer interaction; keep a ring for keyboard users only. */
-.glassx :focus:not(:focus-visible) {
+.glassx :focus:not(:focus-visible),
+.glassx:focus:not(:focus-visible) {
   outline: none;
 }
-.glassx :focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.6);
-  outline-offset: 2px;
+.glassx :focus-visible,
+.glassx:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.65);
+  outline-offset: 3px;
+}
+
+/* ── Panel ───────────────────────────────────────────────────────────────── */
+.glassx.lq > .lq-content {
+  height: auto;
+}
+
+/* ── Refraction copies (`GlassCopyContext`) ──────────────────────────────────
+   Flat look-alikes rendered inside another surface's backdrop: identical
+   dimensions, no filters/controllers/media. They only exist to be refracted. */
+
+/* Viewport-glued wallpaper slice under a page-content copy. Oversized so the
+   filter's sampling reach never reads past it at the copy's page-top edge. */
+.copy-wallpaper {
+  position: absolute;
+  top: -160px;
+  left: -160px;
+  width: calc(100vw + 320px);
+  height: calc(100vh + 320px);
+  background-image: var(--lq-backdrop);
+  background-size: var(--lq-cover-width, 100vw) var(--lq-cover-height, 100vh);
+  background-position: calc(160px + var(--lq-cover-x, 0px))
+    calc(160px + var(--lq-cover-y, 0px));
+  background-repeat: no-repeat;
+}
+
+/* Approximation of the glass material as a plain fill. */
+.glassx-flat {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+.glassx-flat.glassx-button[data-variant="primary"] {
+  background: rgba(255, 255, 255, 0.28);
+}
+.glassx-flat.glassx-button[data-variant="ghost"] {
+  background: rgba(255, 255, 255, 0.05);
+}
+.glassx-flat-thumb {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.glassx-flat-toggle .glassx-toggle-item[data-active="true"] {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
 }
 
 /* ── Button ──────────────────────────────────────────────────────────────── */
@@ -36,23 +84,118 @@
   appearance: none;
   border: 0;
   border-radius: 999px;
-  padding: 0.78em 1.5em;
+  padding: 0.72em 1.35em;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 590;
+  letter-spacing: 0.005em;
   cursor: pointer;
-  transition:
-    transform 0.12s ease,
-    box-shadow 0.12s ease;
+  transition: transform 0.15s ease;
 }
 .glassx-button .lq-content {
   display: inline-flex;
   align-items: center;
   gap: 0.5em;
   height: auto;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.glassx-button .glassx-btn-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: currentColor;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
 }
 .glassx-button:active {
-  transform: scale(0.97);
+  transform: scale(0.965);
+}
+
+/* ── Lens (draggable) ────────────────────────────────────────────────────── */
+.glassx-lens {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  border-radius: 50%;
+}
+.glassx-lens:active {
+  cursor: grabbing;
+}
+.glassx.lq > .lq-content.glassx-lens-hint {
+  height: 100%;
+}
+.glassx-lens .glassx-lens-hint {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.6s ease;
+}
+.glassx-lens .glassx-lens-hint[data-dragged="true"] {
+  opacity: 0;
+}
+
+/* ── Dock ────────────────────────────────────────────────────────────────── */
+.glassx-dock {
+  display: inline-block;
+  border-radius: 32px;
+}
+.glassx-dock-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 12px 14px;
+}
+.glassx-dock-app {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  line-height: 0;
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.glassx-dock-app:hover {
+  transform: translateY(-10px) scale(1.16);
+}
+.glassx-dock-app:active {
+  transform: translateY(-6px) scale(1.05);
+}
+.glassx-dock-icon {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.35),
+    0 6px 16px rgba(0, 0, 0, 0.35);
+}
+.glassx-dock-glyph {
+  width: 28px;
+  height: 28px;
+  fill: #fff;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+
+/* App icon in its small (notification) size. */
+.glassx-app-badge {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.3),
+    0 3px 8px rgba(0, 0, 0, 0.3);
+}
+.glassx-app-badge svg {
+  width: 18px;
+  height: 18px;
+  fill: #fff;
 }
 
 /* ── Toggle group ────────────────────────────────────────────────────────── */
@@ -66,7 +209,7 @@
   /* No fill: the static glass surface below shows the page through the row, and
      the lens refracts it under the selection. */
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 /* Hidden holder for the generated <filter>. */
 .glassx-toggle-defs {
@@ -102,7 +245,7 @@
   z-index: 1;
   pointer-events: none;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.09);
   box-shadow:
     inset 0 1px 1.5px rgba(255, 255, 255, 0.9),
     inset 0 -1.5px 2px rgba(0, 0, 0, 0.25),
@@ -120,15 +263,15 @@
   border: 0;
   color: var(--fg);
   font: inherit;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 590;
   line-height: 1;
-  padding: 0.55em 0;
+  padding: 0.6em 0;
   border-radius: 999px;
   cursor: pointer;
   text-align: center;
   white-space: nowrap;
-  opacity: 0.62;
+  opacity: 0.6;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   transition: opacity 0.18s ease;
 }
@@ -142,8 +285,8 @@
 /* ── Switch ──────────────────────────────────────────────────────────────── */
 .glassx-switch {
   position: relative;
-  width: 60px;
-  height: 34px;
+  width: 54px;
+  height: 32px;
   flex: none;
   cursor: pointer;
   display: inline-block;
@@ -152,7 +295,7 @@
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.18);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
   transition: background 0.25s ease;
 }
@@ -161,14 +304,14 @@
 }
 .glassx-switch-thumb.lq {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 3px;
+  left: 3px;
   width: 26px;
   height: 26px;
   transition: transform 0.28s cubic-bezier(0.34, 1.4, 0.5, 1);
 }
 .glassx-switch[data-on="true"] .glassx-switch-thumb {
-  transform: translateX(26px);
+  transform: translateX(22px);
 }
 
 /* ── Slider ──────────────────────────────────────────────────────────────── */
@@ -184,10 +327,11 @@
 .glassx-slider-track {
   position: relative;
   width: 100%;
-  height: 12px;
+  height: 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
 }
 .glassx-slider-fill {
   position: absolute;
@@ -195,7 +339,7 @@
   top: 0;
   bottom: 0;
   border-radius: 999px;
-  background: linear-gradient(90deg, #7aa8ff, #d58cff);
+  background: rgba(255, 255, 255, 0.95);
 }
 .glassx-slider-thumb.lq {
   position: absolute;
@@ -208,50 +352,95 @@
 .glassx-slider-thumb.lq:active {
   cursor: grabbing;
 }
-/* Invisible refraction source: full track width, tall enough that the thumb's
-   rim + displacement never reaches past the colored copy. */
-.glassx-slider-refsrc {
+/* The squished bar riding over the wallpaper inside the thumb's backdrop. */
+.glassx-thumb-bar {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 88px;
-  transform: translateY(-50%);
-  pointer-events: none;
+  inset: 0;
 }
-/* The copy the thumb refracts: grey unfilled side + colored fill, filling the
-   tall source so there are no transparent edges to smear. */
-.glassx-slider .glassx-track-copy {
-  background: #4a4d5e;
+/* Small variant (music widget). */
+.glassx-slider.sm {
+  height: 26px;
+}
+.glassx-slider.sm .glassx-slider-track {
+  height: 7px;
+}
+.glassx-slider.sm .glassx-slider-thumb.lq {
+  width: 22px;
+  height: 22px;
 }
 
-/* ── QR code (WebGL texture backend) ─────────────────────────────────────── */
-.glassx-qr {
+/* ── Rain (animated clone-mode droplets) ─────────────────────────────────── */
+.glassx-rain {
   position: relative;
-  border-radius: 18px;
+  width: 100%;
+  height: 420px;
   overflow: hidden;
-  cursor: pointer;
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.34);
 }
-.glassx-qr-source,
-.glassx-qr-glass {
+.glassx-raindrop {
+  position: absolute;
+  top: 0;
+  border-radius: 50%;
+}
+
+/* ── Shockwave (WebGL texture backend; cursor-fed ripple field) ─────────── */
+.glassx-shockwave {
+  position: relative;
+  width: 100%;
+  height: clamp(320px, 44vw, 460px);
+  overflow: hidden;
+  border-radius: 28px;
+  background: #0c1018;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 28px 72px rgba(0, 0, 0, 0.38);
+  cursor: crosshair;
+  touch-action: manipulation;
+}
+.glassx-shockwave::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.42),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.28);
+}
+.glassx-shockwave-source,
+.glassx-shockwave-glass {
   position: absolute;
   inset: 0;
   display: block;
   width: 100%;
   height: 100%;
 }
-.glassx-qr-glass {
+.glassx-shockwave-source {
+  z-index: 0;
+}
+.glassx-shockwave-glass {
+  z-index: 1;
   pointer-events: none;
+}
+.glassx-shockwave-flat {
+  background-image: var(--lq-backdrop);
+  background-size: cover;
+  background-position: center;
+  cursor: default;
+}
+.glassx-shockwave[data-webgl="false"] .glassx-shockwave-glass {
+  display: none;
 }
 
 /* ── Video player (WebGL texture backend; glass controls over live video) ── */
 .glassx-video {
   position: relative;
-  border-radius: 18px;
+  border-radius: 22px;
   overflow: hidden;
-  background: #000;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  background-color: #000;
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
 }
 .glassx-video-el {
   position: absolute;
@@ -260,6 +449,7 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  cursor: pointer;
 }
 .glassx-video-glass {
   position: absolute;
@@ -276,11 +466,31 @@
   border: 0;
   background: transparent;
   color: #fff;
-  font-size: 14px;
   line-height: 1;
   cursor: pointer;
   border-radius: 999px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+.glassx-ctl-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  fill: #fff;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+.glassx-ctl-icon.xl {
+  width: 34px;
+  height: 34px;
+}
+/* The big center play bubble: pops away while the video is playing. */
+.glassx-video-bigplay {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+.glassx-video-bigplay[data-hidden="true"] {
+  opacity: 0;
+  transform: scale(0.7);
+  pointer-events: none;
 }
 .glassx-video-scrub {
   position: absolute;
@@ -288,10 +498,11 @@
   align-items: center;
   cursor: pointer;
   border-radius: 999px;
+  overflow: hidden;
 }
 .glassx-video-scrub-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #7aa8ff, #d58cff);
+  background: rgba(255, 255, 255, 0.92);
   pointer-events: none;
 }

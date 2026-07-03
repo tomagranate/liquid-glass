@@ -1,6 +1,9 @@
 export { GlassButton } from "./GlassButton.tsx";
-export { GlassSwitch } from "./GlassSwitch.tsx";
+export { GlassDock } from "./GlassDock.tsx";
+export { GlassLens } from "./GlassLens.tsx";
+export { GlassPanel } from "./GlassPanel.tsx";
+export { GlassShockwave } from "./GlassShockwave.tsx";
 export { GlassSlider } from "./GlassSlider.tsx";
+export { GlassSwitch } from "./GlassSwitch.tsx";
 export { GlassToggleGroup } from "./GlassToggleGroup.tsx";
-export { GlassQRCode } from "./GlassQRCode.tsx";
 export { GlassVideoPlayer } from "./GlassVideoPlayer.tsx";

@@ -14,9 +14,9 @@
  *   can't read (a `<canvas>` QR code, a playing `<video>`). Import the stylesheet
  *   once: `import "@tomagranate/liquid-glass/styles.css"`.
  *
- * Pre-styled components (button, switch, slider, toggle, QR, video player) are
- * not shipped — see `examples/demo/src/glass` for reference implementations you
- * can copy and restyle.
+ * Pre-styled components (button, panel, draggable lens, dock, switch, slider,
+ * toggle, rain, video player) are not shipped — see `examples/demo/src/glass`
+ * for reference implementations you can copy and restyle.
  */
 
 // ── React bindings ──────────────────────────────────────────────────────────

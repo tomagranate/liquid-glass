@@ -1,25 +1,20 @@
 :root {
   color-scheme: dark;
+  font-family:
+    InterVariable, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 
-  /* The surface every glass element refracts. The SVG engine reads this from
-     `--lq-backdrop` and keeps a copy aligned to the viewport behind each lens. */
-  --lq-backdrop:
-    radial-gradient(
-      1200px 820px at 12% 8%,
-      #2a1f6b 0%,
-      rgba(42, 31, 107, 0) 60%
-    ),
-    radial-gradient(
-      1000px 720px at 88% 92%,
-      #7a2bb0 0%,
-      rgba(122, 43, 176, 0) 55%
-    ),
-    radial-gradient(
-      900px 700px at 70% 20%,
-      #1f6b63 0%,
-      rgba(31, 107, 99, 0) 50%
-    ),
-    linear-gradient(135deg, #0b1030 0%, #160b2e 50%, #06121f 100%);
+  /* Set from JS to the active wallpaper; the glass engine refracts this. */
+  --lq-backdrop: url("/wallpapers/amber.webp");
+  /* Demo wallpapers are 3:2. Use the same viewport cover box everywhere the
+     wallpaper is copied, so mobile screens crop instead of squashing. */
+  --lq-cover-width: max(100vw, 150vh);
+  --lq-cover-height: max(66.6667vw, 100vh);
+  --lq-cover-x: calc((100vw - var(--lq-cover-width)) / 2);
+  --lq-cover-y: calc((100vh - var(--lq-cover-height)) / 2);
+
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 * {
@@ -32,22 +27,19 @@ body,
   min-height: 100%;
 }
 body {
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: #fff;
-  background-color: #05060d;
+  background-color: #201004;
   background-image: var(--lq-backdrop);
-  /* Glue the background to the viewport so it matches the viewport-aligned
-     backdrop copy the glass refracts (keeps refraction registered on scroll). */
+  /* Glue the background to the viewport, cover-fitted without distortion. The
+     glass copies use the same CSS variables to stay registered with it. */
   background-attachment: fixed;
   background-repeat: no-repeat;
-  background-size: cover;
+  background-size: var(--lq-cover-width) var(--lq-cover-height);
+  background-position: var(--lq-cover-x) var(--lq-cover-y);
 }
 
-.page {
-  max-width: 940px;
-  margin: 0 auto;
-  padding: 72px 24px 160px;
+a {
+  color: inherit;
 }
 
 /* Marker for content that rides above a glass surface's refraction/sheen. */
@@ -56,80 +48,531 @@ body {
   z-index: 2;
 }
 
-.title {
-  font-size: clamp(34px, 6vw, 58px);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  margin: 0 0 10px;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
-}
-.subtitle {
-  font-size: 17px;
-  opacity: 0.85;
-  max-width: 64ch;
-  margin: 0 0 44px;
-  line-height: 1.55;
-}
-.subtitle a {
-  color: #c9b8ff;
+/* A flat, inert duplicate of the page rendered inside a glass surface's
+   backdrop layer (see glass/flat.ts). Sized by the engine to the real page. */
+.page-copy {
+  position: relative;
+  width: 100%;
+  pointer-events: none;
 }
 
-.section {
-  margin: 0 0 40px;
+.shell {
+  width: min(1080px, 100% - 48px);
+  margin-inline: auto;
 }
-.section h2 {
+
+/* ── Type ────────────────────────────────────────────────────────────────── */
+.eyebrow {
+  margin: 0 0 14px;
+  font-family: var(--mono);
   font-size: 12px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  opacity: 0.7;
-  margin: 0 0 16px;
-  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+}
+.hero-title {
+  margin: 0 0 22px;
+  font-size: clamp(46px, 7vw, 78px);
+  font-weight: 640;
+  letter-spacing: -0.025em;
+  line-height: 1.02;
+  max-width: 14ch;
+  text-wrap: balance;
+  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.4);
+}
+.lede {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.6;
+  max-width: 56ch;
+  text-wrap: pretty;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.35);
+}
+.scene-title {
+  margin: 0 0 14px;
+  font-size: clamp(30px, 4vw, 42px);
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  max-width: 26ch;
+  text-wrap: balance;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.4);
+}
+.scene-sub {
+  margin: 0;
+  font-size: 16.5px;
+  line-height: 1.6;
+  max-width: 58ch;
+  text-wrap: pretty;
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.35);
 }
 
-.demo-row {
+/* ── Nav ─────────────────────────────────────────────────────────────────── */
+.nav {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  width: min(1080px, 100vw - 32px);
+  border-radius: 999px;
+}
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 9px 10px 9px 20px;
+}
+.nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.nav-mark {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.35));
+}
+.nav-links {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav-links a {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 550;
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.nav-links a:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+.hero {
+  position: relative;
+  padding: 176px 0 130px;
+}
+.hero-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 22px;
+  gap: 14px;
+  margin-top: 34px;
 }
-.readout {
-  font:
-    13px / 1 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
-  opacity: 0.8;
-  min-width: 3ch;
-}
-
-/* The tunable playground surface — a real glass surface (backdrop-clone). */
-.playground-glass {
-  width: 240px;
-  height: 130px;
-  font-weight: 700;
-  font-size: 18px;
-}
-.playground-glass .lq-content {
-  display: grid;
-  place-items: center;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
-}
-
-.controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px 28px;
+.install {
+  display: inline-flex;
   align-items: center;
-  margin-top: 20px;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 10px 16px;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+}
+.install code {
+  font-family: var(--mono);
   font-size: 13px;
+  letter-spacing: 0.01em;
 }
-.controls label {
+.install-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: rgba(255, 255, 255, 0.6);
+}
+.install:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+.hero-lens {
+  position: absolute;
+  right: 4%;
+  top: 200px;
+  z-index: 5;
+}
+@media (max-width: 920px) {
+  .hero {
+    padding-top: 140px;
+  }
+  .hero-lens {
+    position: relative;
+    right: auto;
+    top: auto;
+    margin: 56px auto 0;
+    display: block;
+  }
+}
+
+/* ── Scenes ──────────────────────────────────────────────────────────────── */
+.scene {
+  padding: 96px 0;
+}
+.stage {
+  margin-top: 52px;
+}
+.stage-center {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0;
+}
+
+/* Lock screen */
+.lock {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  opacity: 0.9;
+  align-items: center;
+  gap: 12px;
 }
-.controls input[type="range"] {
-  width: 150px;
-  accent-color: #fff;
+.lock-time {
+  margin: 0;
+  font-size: clamp(64px, 9vw, 92px);
+  font-weight: 250;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.45);
+}
+.lock-date {
+  margin: 0 0 22px;
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4);
+}
+.lock-card {
+  width: min(430px, 100%);
+  border-radius: 24px;
+}
+
+/* Music widget */
+.widget {
+  padding: 16px 18px 14px;
+}
+.widget-top {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.widget-art {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background:
+    radial-gradient(140% 120% at 20% 15%, #ffd7a8 0%, transparent 45%),
+    conic-gradient(
+      from 210deg at 60% 65%,
+      #2b1a5e,
+      #7b2d8e,
+      #e8547c,
+      #f5a45d,
+      #2b1a5e
+    );
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.35),
+    0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.widget-meta {
+  min-width: 0;
+  flex: 1;
+}
+.widget-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.widget-artist {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.68);
+}
+.widget-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.widget-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+.widget-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.widget-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  fill: #fff;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+.widget-icon.lg {
+  width: 22px;
+  height: 22px;
+}
+.widget-progress {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* Notifications */
+.notif {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.notif-text {
+  min-width: 0;
+  flex: 1;
+}
+.notif-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.notif-app {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.6);
+}
+.notif-time {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
+}
+.notif-title {
+  margin: 4px 0 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.notif-body {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* Control center */
+.cc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
+  width: min(760px, 100%);
+  margin-inline: auto;
+}
+.cc-tile {
+  border-radius: 26px;
+}
+.cc-body {
+  padding: 18px 22px;
+}
+.cc-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.55);
+}
+.cc-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 11px 0;
+}
+.cc-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: rgba(255, 255, 255, 0.85);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+.cc-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 550;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.cc-slider {
+  flex: 1;
+  width: auto;
+}
+.cc-toggle {
+  display: flex;
+  justify-content: center;
+  margin-top: 26px;
+}
+
+/* Playground */
+.playground {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 26px;
+  align-items: stretch;
+}
+.specimen-stage {
+  display: grid;
+  place-items: center;
+  min-height: 320px;
+}
+.specimen {
+  width: min(320px, 100%);
+  height: 190px;
+}
+.specimen.glassx-flat {
+  border-radius: 32px;
+}
+.specimen-label {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 17px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+.mixer {
+  border-radius: 26px;
+}
+.mixer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 26px;
+}
+.range {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.range-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.range-top code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+}
+.range input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  margin: 6px 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+}
+.range input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+}
+.range input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.footer {
+  padding: 40px 0 110px;
+  text-align: center;
+}
+.footer p {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+}
+.footer-credit {
+  margin-top: 6px;
+}
+.footer .footer-credit {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* ── Wallpaper switcher ──────────────────────────────────────────────────── */
+.switcher {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 60;
+  border-radius: 999px;
+}
+.switcher-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+.switcher-swatch {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  appearance: none;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.25),
+    0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.switcher-swatch[data-active="true"] {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.25),
+    0 0 0 2px rgba(255, 255, 255, 0.9),
+    0 2px 6px rgba(0, 0, 0, 0.35);
 }
