@@ -577,9 +577,6 @@ function ControlCenterScene(p) {
 }
 
 function VideoScene() {
-  const [width] = useState(() =>
-    Math.min(680, Math.max(300, window.innerWidth - 48)),
-  );
   return (
     <section className="scene shell">
       <SceneHeader index="04" title="Glass over live video.">
@@ -588,7 +585,7 @@ function VideoScene() {
         through the buttons in real time.
       </SceneHeader>
       <div className="stage stage-center">
-        <GlassVideoPlayer width={width} height={Math.round(width * 0.5625)} />
+        <GlassVideoPlayer width={680} height={383} />
       </div>
     </section>
   );

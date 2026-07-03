@@ -1,4 +1,11 @@
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   PlayIcon,
   SpeakerWaveIcon,
@@ -19,8 +26,10 @@ export interface GlassVideoPlayerProps {
 
 /* Deep, bubbly materials — the video should visibly pour through the rims. */
 const BAR_GLASS = { depth: 14, scale: 44, chroma: 0.6, specular: 0.6 };
-const SCRUB_GLASS = { depth: 10, scale: 26,  chroma: 0.2, specular: 0.2 };
+const SCRUB_GLASS = { depth: 10, scale: 26, chroma: 0.2, specular: 0.2 };
 const BUBBLE_GLASS = { depth: 24, scale: 36, chroma: 0.7, specular: 0.6 };
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 
 /**
  * A video player whose controls are liquid glass. Each control is a lens over
@@ -43,7 +52,12 @@ function FlatVideoPlayer({
   return (
     <div
       className="glassx glassx-video"
-      style={{ width, height, backgroundImage: `url(${poster})` }}
+      style={{
+        width: "100%",
+        maxWidth: width,
+        aspectRatio: `${width} / ${height}`,
+        backgroundImage: `url(${poster})`,
+      }}
     />
   );
 }
@@ -54,49 +68,84 @@ function VideoPlayerImpl({
   width = 480,
   height = 270,
 }: GlassVideoPlayerProps) {
+  const hostRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(true);
   const [progress, setProgress] = useState(0);
+  const [size, setSize] = useState({ width, height });
+  const aspectRatio = width / height;
 
-  // Control geometry (CSS px relative to the overlay canvas).
-  const pad = 16;
-  const barH = 44;
-  const by = height - pad - barH;
-  const bubbleSize = 96;
-  const bubble = {
-    x: (width - bubbleSize) / 2,
-    y: (height - bubbleSize) / 2,
-    w: bubbleSize,
-    h: bubbleSize,
-    radius: bubbleSize / 2,
-  };
-  const vol = { x: width - pad - 40, y: by + 2, w: 40, h: 40, radius: 20 };
-  const scrub = {
-    x: pad,
-    y: by + 12,
-    w: vol.x - 14 - pad,
-    h: 20,
-    radius: 10,
-  };
+  useLayoutEffect(() => {
+    const node = hostRef.current;
+    if (!node) return;
 
-  const lenses: LensSpec[] = useMemo(
-    () => [
+    const updateSize = () => {
+      const rect = node.getBoundingClientRect();
+      const nextWidth = Math.max(1, rect.width);
+      const nextHeight = Math.max(1, rect.height || nextWidth / aspectRatio);
+      setSize((current) =>
+        Math.abs(current.width - nextWidth) < 0.5 &&
+        Math.abs(current.height - nextHeight) < 0.5
+          ? current
+          : { width: nextWidth, height: nextHeight },
+      );
+    };
+
+    updateSize();
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [aspectRatio]);
+
+  const layout = useMemo(() => {
+    const playerWidth = size.width;
+    const playerHeight = size.height;
+    const pad = clamp(playerWidth * 0.04, 10, 16);
+    const controlSize = playerWidth < 380 ? 36 : 40;
+    const barH = controlSize + 4;
+    const by = Math.max(pad, playerHeight - pad - barH);
+    const bubbleSize = clamp(playerWidth * 0.22, 72, 96);
+    const gap = clamp(playerWidth * 0.025, 8, 14);
+    const scrubH = playerWidth < 380 ? 18 : 20;
+    const vol = {
+      x: playerWidth - pad - controlSize,
+      y: by + (barH - controlSize) / 2,
+      w: controlSize,
+      h: controlSize,
+      radius: controlSize / 2,
+    };
+    const scrub = {
+      x: pad,
+      y: by + (barH - scrubH) / 2,
+      w: Math.max(0, vol.x - gap - pad),
+      h: scrubH,
+      radius: scrubH / 2,
+    };
+    const bubble = {
+      x: (playerWidth - bubbleSize) / 2,
+      y: (playerHeight - bubbleSize) / 2,
+      w: bubbleSize,
+      h: bubbleSize,
+      radius: bubbleSize / 2,
+    };
+
+    const lenses: LensSpec[] = [
       { ...scrub, ...SCRUB_GLASS },
       { ...vol, ...BAR_GLASS },
-      // The play bubble only exists while paused; while playing it pops away.
       ...(playing ? [] : [{ ...bubble, ...BUBBLE_GLASS }]),
-    ],
-    // geometry only depends on size + playing
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [width, height, playing],
-  );
+    ];
+
+    return { bubble, lenses, scrub, vol };
+  }, [playing, size.height, size.width]);
 
   const canvasRef = useGlassTexture({
     getSource: () => videoRef.current,
-    width,
-    height,
-    lenses,
+    width: size.width,
+    height: size.height,
+    lenses: layout.lenses,
     live: true,
   });
 
@@ -137,8 +186,15 @@ function VideoPlayerImpl({
   };
 
   return (
-    <div className="glassx glassx-video" style={{ width, height }}>
-      {/* biome-ignore lint/a11y/useMediaCaption: decorative demo footage */}
+    <div
+      ref={hostRef}
+      className="glassx glassx-video"
+      style={{
+        width: "100%",
+        maxWidth: width,
+        aspectRatio: `${width} / ${height}`,
+      }}
+    >
       <video
         ref={videoRef}
         className="glassx-video-el"
@@ -164,10 +220,10 @@ function VideoPlayerImpl({
         className="glassx-video-ctl glassx-video-bigplay"
         data-hidden={playing}
         style={{
-          left: bubble.x,
-          top: bubble.y,
-          width: bubble.w,
-          height: bubble.h,
+          left: layout.bubble.x,
+          top: layout.bubble.y,
+          width: layout.bubble.w,
+          height: layout.bubble.h,
         }}
         onClick={togglePlay}
         aria-label={playing ? "Pause" : "Play"}
@@ -178,7 +234,12 @@ function VideoPlayerImpl({
 
       <div
         className="glassx-video-scrub"
-        style={{ left: scrub.x, top: scrub.y, width: scrub.w, height: scrub.h }}
+        style={{
+          left: layout.scrub.x,
+          top: layout.scrub.y,
+          width: layout.scrub.w,
+          height: layout.scrub.h,
+        }}
         onPointerDown={seek}
         role="slider"
         aria-label="Seek"
@@ -196,7 +257,12 @@ function VideoPlayerImpl({
       <button
         type="button"
         className="glassx-video-ctl"
-        style={{ left: vol.x, top: vol.y, width: vol.w, height: vol.h }}
+        style={{
+          left: layout.vol.x,
+          top: layout.vol.y,
+          width: layout.vol.w,
+          height: layout.vol.h,
+        }}
         onClick={toggleMute}
         aria-label={muted ? "Unmute" : "Mute"}
       >
