@@ -63,11 +63,14 @@ export function GlassVideoPlayer({
   height = 270,
 }: GlassVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [mediaReady, setMediaReady] = useState(false);
   const [muted, setMuted] = useState(true);
   const [progress, setProgress] = useState(0);
   const [size, setSize] = useState({ width, height });
   const aspectRatio = width / height;
+  const waitingBackground = `url("${poster}")`;
+  const waitingTint = "rgba(175,220,235,0.16)";
 
   // Measure the video element (absolutely filling the surface) so control
   // positions track the rendered player size without relying on ref forwarding.
@@ -131,15 +134,15 @@ export function GlassVideoPlayer({
     if (!v) return;
     const onTime = () =>
       setProgress(v.duration ? v.currentTime / v.duration : 0);
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const onPlay = () => setHasStarted(true);
+    const onPlaying = () => setMediaReady(true);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("play", onPlay);
-    v.addEventListener("pause", onPause);
+    v.addEventListener("playing", onPlaying);
     return () => {
       v.removeEventListener("timeupdate", onTime);
       v.removeEventListener("play", onPlay);
-      v.removeEventListener("pause", onPause);
+      v.removeEventListener("playing", onPlaying);
     };
   }, []);
 
@@ -206,30 +209,32 @@ export function GlassVideoPlayer({
       />
 
       {/* Interactive glass controls, positioned over the live video. */}
-      <Glass
-        as="button"
-        type="button"
-        className="glassx-video-ctl glassx-video-bigplay"
-        data-hidden={playing}
-        {...BUBBLE_GLASS}
-        background={false}
-        style={{
-          left: layout.bubble.x,
-          top: layout.bubble.y,
-          width: layout.bubble.w,
-          height: layout.bubble.h,
-        }}
-        onClick={togglePlay}
-        aria-label={playing ? "Pause" : "Play"}
-        tabIndex={playing ? -1 : 0}
-      >
-        <PlayIcon className="glassx-ctl-icon xl" />
-      </Glass>
+      {!hasStarted && (
+        <Glass
+          as="button"
+          type="button"
+          className="glassx-video-ctl glassx-video-bigplay"
+          {...BUBBLE_GLASS}
+          background={mediaReady ? false : waitingBackground}
+          tint={mediaReady ? BUBBLE_GLASS.tint : waitingTint}
+          style={{
+            left: layout.bubble.x,
+            top: layout.bubble.y,
+            width: layout.bubble.w,
+            height: layout.bubble.h,
+          }}
+          onClick={togglePlay}
+          aria-label="Play"
+        >
+          <PlayIcon className="glassx-ctl-icon xl" />
+        </Glass>
+      )}
 
       <Glass
         className="glassx-video-scrub"
         {...SCRUB_GLASS}
-        background={false}
+        background={mediaReady ? false : waitingBackground}
+        tint={mediaReady ? SCRUB_GLASS.tint : waitingTint}
         style={{
           left: layout.scrub.x,
           top: layout.scrub.y,
@@ -256,7 +261,8 @@ export function GlassVideoPlayer({
         type="button"
         className="glassx-video-ctl"
         {...BAR_GLASS}
-        background={false}
+        background={mediaReady ? false : waitingBackground}
+        tint={mediaReady ? BAR_GLASS.tint : waitingTint}
         style={{
           left: layout.vol.x,
           top: layout.vol.y,

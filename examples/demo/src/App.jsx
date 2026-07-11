@@ -97,16 +97,41 @@ glass(lensEl, { radius: "50%" });`,
   },
 ];
 
-const DOCK_CODE = `import { Glass } from "@tomagranate/liquid-glass/react";
+const DOCK_CODE = [
+  {
+    label: "React",
+    lang: "jsx",
+    code: `import { Glass } from "@tomagranate/liquid-glass/react";
 
-// One glass slab; the icons ride on top and stay crisp and clickable.
-<Glass className="dock" radius={32} scale={84} chroma={0.55}>
-  {apps.map((app) => (
-    <button key={app.id} aria-label={app.label}>{app.icon}</button>
-  ))}
-</Glass>`;
+// The empty slab and icon row are siblings, so lifted icons are never clipped.
+<div className="dock">
+  <Glass className="dock-slab" radius={32} scale={84} chroma={0.55} />
+  <div className="dock-icons">
+    {apps.map((app) => (
+      <button key={app.id} aria-label={app.label}>{app.icon}</button>
+    ))}
+  </div>
+</div>`,
+  },
+  {
+    label: "Vanilla",
+    lang: "js",
+    code: `import { glass } from "@tomagranate/liquid-glass";
 
-const SLIDER_CODE = `import { useGlass, useSurface } from "@tomagranate/liquid-glass/react";
+const slab = document.querySelector(".dock-slab");
+glass(slab, { radius: 32, scale: 84, chroma: 0.55 });
+
+// .dock is position:relative + overflow:visible; .dock-slab is absolute/inset:0.
+// The sibling .dock-icons row stays crisp and can lift beyond the slab.`,
+  },
+];
+
+const SLIDER_CODE = [
+  {
+    label: "React",
+    lang: "jsx",
+    code: `import { useLayoutEffect, useRef } from "react";
+import { useGlass, useSurface } from "@tomagranate/liquid-glass/react";
 
 function Slider({ value, onChange }) {
   const track = useRef(null);
@@ -122,9 +147,32 @@ function Slider({ value, onChange }) {
       <div ref={thumb} className="thumb" style={{ left: \`\${value}%\` }} />
     </div>
   );
-}`;
+}`,
+  },
+  {
+    label: "Vanilla",
+    lang: "js",
+    code: `import { createSurface, glass } from "@tomagranate/liquid-glass";
 
-const SWITCH_CODE = `import { useGlass, useSurface } from "@tomagranate/liquid-glass/react";
+const track = document.querySelector(".slider-track");
+const thumb = document.querySelector(".slider-thumb");
+const input = document.querySelector('input[type="range"]');
+createSurface(track);
+const handle = glass(thumb, { radius: 999, background: false });
+
+input.addEventListener("input", () => {
+  thumb.style.left = input.value + "%";
+  handle.geometryChanged();
+});`,
+  },
+];
+
+const SWITCH_CODE = [
+  {
+    label: "React",
+    lang: "jsx",
+    code: `import { useRef } from "react";
+import { useGlass, useSurface } from "@tomagranate/liquid-glass/react";
 
 function Switch({ on, onChange }) {
   const track = useRef(null);
@@ -137,7 +185,24 @@ function Switch({ on, onChange }) {
       <div ref={thumb} className="thumb" />
     </div>
   );
-}`;
+}`,
+  },
+  {
+    label: "Vanilla",
+    lang: "js",
+    code: `import { createSurface, glass } from "@tomagranate/liquid-glass";
+
+const track = document.querySelector(".switch-track");
+const thumb = document.querySelector(".switch-thumb");
+const control = document.querySelector(".switch");
+createSurface(track);
+glass(thumb, { radius: 999, background: false });
+
+control.addEventListener("click", () => {
+  control.toggleAttribute("data-on"); // CSS animates the thumb.
+});`,
+  },
+];
 
 const VIDEO_CODE = [
   {
@@ -161,7 +226,11 @@ glass(playButton, { radius: "50%", chroma: 0.7, background: false });`,
   },
 ];
 
-const CANVAS_CODE = `import {
+const CANVAS_CODE = [
+  {
+    label: "React",
+    lang: "jsx",
+    code: `import {
   Glass,
   GlassMediaSurface,
 } from "@tomagranate/liquid-glass/react";
@@ -172,9 +241,26 @@ const CANVAS_CODE = `import {
   <Glass as="button" background={false} radius={999}>
     Inspect live data
   </Glass>
-</GlassMediaSurface>`;
+</GlassMediaSurface>`,
+  },
+  {
+    label: "Vanilla",
+    lang: "js",
+    code: `import { createMediaSurface, glass } from "@tomagranate/liquid-glass";
 
-const PLAYGROUND_CODE = `import { GlassSurface, useGlass } from "@tomagranate/liquid-glass/react";
+const canvas = document.querySelector("canvas");
+const control = document.querySelector(".chart-control");
+createMediaSurface(canvas, { live: true });
+glass(control, { radius: 999, background: false });`,
+  },
+];
+
+const PLAYGROUND_CODE = [
+  {
+    label: "React",
+    lang: "jsx",
+    code: `import { useEffect, useRef } from "react";
+import { GlassSurface, useGlass } from "@tomagranate/liquid-glass/react";
 
 function Specimen({ material }) {
   const ref = useRef(null);
@@ -187,7 +273,25 @@ function Specimen({ material }) {
 <div className="stage">
   <GlassSurface className="pattern" />
   <Specimen material={material} />
-</div>`;
+</div>`,
+  },
+  {
+    label: "Vanilla",
+    lang: "js",
+    code: `import { createSurface, glass } from "@tomagranate/liquid-glass";
+
+createSurface(document.querySelector(".pattern"));
+const handle = glass(document.querySelector(".specimen"), {
+  radius: 32,
+  background: false,
+});
+const controls = document.querySelector(".material-controls");
+
+controls.addEventListener("input", (event) => {
+  handle.update({ [event.target.name]: Number(event.target.value) });
+});`,
+  },
+];
 
 const CATALOGUE_CASES = {
   wallpaper: "wallpaper-zero-config",
@@ -487,7 +591,7 @@ function DockScene() {
       <div className="stage stage-center">
         <GlassDock />
       </div>
-      <CodeBlock code={DOCK_CODE} lang="jsx" />
+      <CodeBlock tabs={DOCK_CODE} />
     </section>
   );
 }
@@ -548,7 +652,7 @@ function LockScreenScene({ now, playing, setPlaying, progress, setProgress }) {
           body="v0.1 — refraction without screenshots"
         />
       </div>
-      <CodeBlock code={SLIDER_CODE} lang="jsx" />
+      <CodeBlock tabs={SLIDER_CODE} />
     </section>
   );
 }
@@ -729,7 +833,7 @@ function ControlCenterScene(p) {
           />
         </div>
       </div>
-      <CodeBlock code={SWITCH_CODE} lang="jsx" />
+      <CodeBlock tabs={SWITCH_CODE} />
     </section>
   );
 }
@@ -1186,7 +1290,7 @@ function CanvasMediaScene() {
       <div className="stage stage-center">
         <CanvasChart />
       </div>
-      <CodeBlock code={CANVAS_CODE} lang="jsx" />
+      <CodeBlock tabs={CANVAS_CODE} />
     </section>
   );
 }
@@ -1376,7 +1480,7 @@ function PlaygroundScene({ tune, setTune }) {
           />
         </GlassPanel>
       </div>
-      <CodeBlock code={PLAYGROUND_CODE} lang="jsx" />
+      <CodeBlock tabs={PLAYGROUND_CODE} />
     </section>
   );
 }
