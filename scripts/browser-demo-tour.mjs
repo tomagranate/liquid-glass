@@ -3,11 +3,14 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { By, Key, until } from "selenium-webdriver";
 import {
+  analyzeVisualRoi,
   BACKEND_CASES,
   DEMO_CASES,
   severeBrowserLogs,
   validateDemoSnapshot,
+  validateSceneSnapshot,
 } from "./lib/demo-tour-analysis.mjs";
+import { compareRoi } from "./lib/png-proof.mjs";
 import { startStaticServer } from "./lib/static-server.mjs";
 import { assertBrand, createBrandedDriver } from "./lib/webdriver.mjs";
 import { assertRenderPreflight } from "./lib/render-preflight.mjs";
@@ -73,6 +76,7 @@ async function verifyDemoBuild() {
 async function takeScreenshot(name) {
   const png = await driver.takeScreenshot();
   await writeFile(join(artifactRoot, name), Buffer.from(png, "base64"));
+  return png;
 }
 
 async function awaitVisibleRenderPreflight() {
@@ -125,6 +129,146 @@ async function readBackend(element) {
     `,
     element,
   );
+}
+
+async function visibleRoi(element) {
+  return driver.executeScript(
+    `const r=arguments[0].getBoundingClientRect(); const d=devicePixelRatio;
+     const left=Math.max(0,r.left), top=Math.max(0,r.top);
+     const right=Math.min(innerWidth,r.right), bottom=Math.min(innerHeight,r.bottom);
+     return {x:left*d,y:top*d,width:Math.max(0,right-left)*d,height:Math.max(0,bottom-top)*d};`,
+    element,
+  );
+}
+
+async function readSceneSnapshot() {
+  const dockCase = await driver.findElement(
+    By.css('[data-demo-case="live-backdrop-auto-fallback"]'),
+  );
+  await scrollTo(dockCase);
+  const dock = await driver.executeScript(`
+    const root=document.querySelector('[data-demo-case="live-backdrop-auto-fallback"]');
+    const dock=root.querySelector('.glassx-dock');
+    const stage=root.querySelector('.stage');
+    const apps=[...dock.querySelectorAll('.glassx-dock-app')];
+    const rect=dock.getBoundingClientRect(), stageRect=stage.getBoundingClientRect();
+    const backend=(dock.dataset.lgBackend || '').split(',');
+    const bg=dock.querySelector('.lg-bg');
+    const bgStyle=bg ? getComputedStyle(bg) : null;
+    return {
+      apps: apps.length,
+      labelled: apps.filter((app) => app.getAttribute('aria-label')?.trim()).length,
+      visibleIcons: apps.filter((app) => {
+        const icon=app.querySelector('.glassx-dock-icon');
+        const r=icon?.getBoundingClientRect();
+        return r && r.width >= 24 && r.height >= 24 && getComputedStyle(icon).visibility !== 'hidden';
+      }).length,
+      width: rect.width,
+      height: rect.height,
+      centerDelta: Math.abs((rect.left + rect.width / 2) - (stageRect.left + stageRect.width / 2)),
+      activeGlass: backend.some((value) => value && value !== 'none'),
+      effectCarrier: Boolean(bgStyle && bgStyle.display !== 'none' && (
+        bgStyle.backdropFilter !== 'none' || bgStyle.webkitBackdropFilter !== 'none' ||
+        bgStyle.filter !== 'none' || bgStyle.backgroundImage !== 'none'
+      )),
+    };
+  `);
+
+  const lockCase = await driver.findElement(
+    By.css('[data-demo-case="slider"]'),
+  );
+  await scrollTo(lockCase);
+  await driver.wait(
+    async () =>
+      driver.executeScript(`return [...document.querySelectorAll('[data-demo-case="slider"] .lock-card')]
+        .every((card) => (card.dataset.lgBackend || '').split(',').some((value) => value !== 'none'));`),
+    3_000,
+  );
+  const notifications = await driver.executeScript(`
+    return [...document.querySelectorAll('[data-demo-case="slider"] .notif')].map((content) => {
+      const card=content.closest('.lock-card');
+      const backend=(card?.dataset.lgBackend || '').split(',');
+      const bg=card?.querySelector('.lg-bg');
+      const style=bg ? getComputedStyle(bg) : null;
+      return {
+        copy: Boolean(content.querySelector('.notif-title')?.textContent.trim() && content.querySelector('.notif-body')?.textContent.trim()),
+        activeGlass: backend.some((value) => value && value !== 'none'),
+        effectCarrier: Boolean(style && style.display !== 'none' && (
+          style.backdropFilter !== 'none' || style.webkitBackdropFilter !== 'none' ||
+          style.filter !== 'none' || style.backgroundImage !== 'none'
+        )),
+      };
+    });
+  `);
+
+  const controls = await driver.findElement(
+    By.css('[data-demo-case="switch-slider-toggle"]'),
+  );
+  await scrollTo(controls);
+  const geometry = await driver.executeScript(`
+    const sliders=[...document.querySelectorAll('[data-demo-case="slider"] [role="slider"], [data-demo-case="switch-slider-toggle"] [role="slider"]')];
+    const sliderGeometry=sliders.map((slider) => {
+      const track=slider.querySelector('.glassx-slider-track');
+      const thumb=slider.querySelector('.glassx-slider-thumb');
+      const tr=track.getBoundingClientRect(), hr=thumb.getBoundingClientRect();
+      const min=Number(slider.getAttribute('aria-valuemin')), max=Number(slider.getAttribute('aria-valuemax'));
+      const value=Number(slider.getAttribute('aria-valuenow'));
+      const pct=(value-min)/(max-min);
+      return {
+        label: slider.getAttribute('aria-label') || 'slider',
+        horizontalDelta: Math.abs((hr.left + hr.width / 2) - (tr.left + tr.width * pct)),
+        verticalDelta: Math.abs((hr.top + hr.height / 2) - (tr.top + tr.height / 2)),
+      };
+    });
+    const switches=[...document.querySelectorAll('[data-demo-case="switch-slider-toggle"] [role="switch"]')].map((toggle) => {
+      const track=toggle.querySelector('.glassx-switch-track');
+      const thumb=toggle.querySelector('.glassx-switch-thumb');
+      const tr=track.getBoundingClientRect(), hr=thumb.getBoundingClientRect();
+      return {
+        label: toggle.closest('.cc-row')?.querySelector('.cc-label')?.textContent.trim() || 'switch',
+        verticalDelta: Math.abs((hr.top + hr.height / 2) - (tr.top + tr.height / 2)),
+        insideTrack: hr.left >= tr.left - 1 && hr.right <= tr.right + 1,
+      };
+    });
+    return {sliders: sliderGeometry, switches};
+  `);
+
+  const staticState = await driver.executeScript(`
+    const brokenScenes=[...document.querySelectorAll('.scene')].flatMap((scene, index) => {
+      const rect=scene.getBoundingClientRect();
+      const stage=scene.querySelector('.stage');
+      const reasons=[];
+      if (rect.width < 240 || rect.height < 100) reasons.push('collapsed');
+      if (stage && !stage.children.length) reasons.push('empty stage');
+      return reasons.map((reason) => (scene.dataset.demoCase || scene.id || 'scene-' + index) + ' ' + reason);
+    });
+    for (const image of document.images) {
+      if (image.complete && image.naturalWidth === 0) brokenScenes.push('broken image ' + (image.currentSrc || image.src));
+    }
+    for (const canvas of document.querySelectorAll('canvas')) {
+      const rect=canvas.getBoundingClientRect();
+      if (!canvas.width || !canvas.height || !rect.width || !rect.height) brokenScenes.push('collapsed canvas');
+    }
+    const snippets=[...document.querySelectorAll('.cb-code')].map((node) => node.textContent.trim());
+    const imports=snippets.filter((code) => code.includes('@tomagranate/liquid-glass'));
+    return {
+      brokenScenes,
+      snippets: {
+        empty: snippets.filter((code) => code.length < 30).length,
+        packageImports: imports.length,
+        reactImport: imports.some((code) => code.includes('@tomagranate/liquid-glass/react')),
+        sourceImports: snippets.filter((code) => code.includes('src/')).length,
+      },
+    };
+  `);
+  return {
+    dock,
+    notifications,
+    brokenScenes: staticState.brokenScenes,
+    snippets: staticState.snippets,
+    sliders: geometry.sliders,
+    switches: geometry.switches,
+  };
 }
 
 async function readPageSnapshot(backends) {
@@ -201,25 +345,69 @@ async function assertKeyboardInteraction(selector, key, attribute, label) {
     element,
   );
   if (!focused) throw new Error(`${label}: keyboard target lost focus`);
+  const after = await element.getAttribute(attribute);
+  if (attribute === "aria-valuenow" && !(Number(after) > Number(before))) {
+    throw new Error(`${label}: value did not increase (${before} → ${after})`);
+  }
   summary.interactions.push({
     label,
     before,
-    after: await element.getAttribute(attribute),
+    after,
   });
 }
 
 async function assertInteractions() {
+  const dock = await driver.findElement(By.css(".glassx-dock"));
+  await scrollTo(dock);
+  const dockRoi = await visibleRoi(dock);
+  const dockBefore = await takeScreenshot("dock-before-wallpaper.png");
+  const firstApp = await dock.findElement(By.css(".glassx-dock-app"));
+  const transformBefore = await firstApp.getCssValue("transform");
+  await driver.actions({ async: true }).move({ origin: firstApp }).perform();
+  await driver.sleep(250);
+  const transformAfter = await firstApp.getCssValue("transform");
+  if (transformAfter === transformBefore || transformAfter === "none") {
+    throw new Error("Dock app hover interaction produced no visible motion");
+  }
+  summary.interactions.push({
+    label: "dock hover",
+    before: transformBefore,
+    after: transformAfter,
+  });
+
   const swatches = await driver.findElements(
     By.css('button[aria-label^="Wallpaper:"]'),
   );
   if (swatches.length < 2) throw new Error("Wallpaper controls are missing");
-  await driver.executeScript("arguments[0].focus()", swatches[1]);
-  await swatches[1].sendKeys(Key.ENTER);
+  const nextSwatch =
+    (
+      await Promise.all(
+        swatches.map(async (swatch) => ({
+          swatch,
+          active: (await swatch.getAttribute("data-active")) === "true",
+        })),
+      )
+    ).find((item) => !item.active)?.swatch || swatches[0];
+  await driver.executeScript("arguments[0].focus()", nextSwatch);
+  await nextSwatch.sendKeys(Key.ENTER);
   await driver.wait(
-    async () => (await swatches[1].getAttribute("data-active")) === "true",
+    async () => (await nextSwatch.getAttribute("data-active")) === "true",
     2_000,
   );
   summary.interactions.push({ label: "wallpaper", active: true });
+  await scrollTo(dock);
+  const dockAfter = await takeScreenshot("dock-after-wallpaper.png");
+  const wallpaperProof = compareRoi(dockBefore, dockAfter, dockRoi);
+  await writeFile(
+    join(artifactRoot, "dock-wallpaper-roi.json"),
+    JSON.stringify(wallpaperProof, null, 2),
+  );
+  if (!wallpaperProof.pass) {
+    throw new Error(
+      `Dock glass did not visibly respond to wallpaper change: ${JSON.stringify(wallpaperProof)}`,
+    );
+  }
+  summary.wallpaperVisualProof = wallpaperProof;
 
   await assertKeyboardInteraction(
     '[data-demo-case="slider"] [role="slider"]',
@@ -228,11 +416,133 @@ async function assertInteractions() {
     "playback slider",
   );
   await assertKeyboardInteraction(
+    '[data-demo-case="switch-slider-toggle"] [role="slider"][aria-label="Brightness"]',
+    Key.ARROW_RIGHT,
+    "aria-valuenow",
+    "brightness slider",
+  );
+  await assertKeyboardInteraction(
     '[data-demo-case="switch-slider-toggle"] [role="switch"]',
     Key.SPACE,
     "aria-checked",
     "Wi-Fi switch",
   );
+
+  const playback = await driver.findElement(
+    By.css(
+      '[data-demo-case="slider"] button[aria-label="Pause"], [data-demo-case="slider"] button[aria-label="Play"]',
+    ),
+  );
+  await scrollTo(playback);
+  const playbackBefore = await playback.getAttribute("aria-label");
+  await playback.click();
+  await driver.wait(
+    async () => (await playback.getAttribute("aria-label")) !== playbackBefore,
+    2_000,
+  );
+  summary.interactions.push({
+    label: "music playback",
+    before: playbackBefore,
+    after: await playback.getAttribute("aria-label"),
+  });
+
+  const darkTab = await driver.findElement(
+    By.xpath(
+      '//div[@role="tablist"]//button[@role="tab" and normalize-space()="Dark"]',
+    ),
+  );
+  await scrollTo(darkTab);
+  await driver.executeScript("arguments[0].focus()", darkTab);
+  await darkTab.sendKeys(Key.ENTER);
+  await driver.wait(
+    async () => (await darkTab.getAttribute("aria-selected")) === "true",
+    2_000,
+  );
+  summary.interactions.push({ label: "appearance tab", selected: "Dark" });
+
+  const seek = await driver.findElement(
+    By.css('[data-demo-case="video-media"] [role="slider"][aria-label="Seek"]'),
+  );
+  await scrollTo(seek);
+  await driver.wait(
+    async () =>
+      driver.executeScript(`
+        const video=document.querySelector('[data-demo-case="video-media"] video');
+        return Boolean(video && Number.isFinite(video.duration) && video.duration > 0);
+      `),
+    8_000,
+    "video metadata did not load",
+  );
+  await driver.executeScript("arguments[0].focus()", seek);
+  if (
+    !(await driver.executeScript(
+      "return document.activeElement === arguments[0]",
+      seek,
+    ))
+  )
+    throw new Error("video scrubber could not receive keyboard focus");
+  await driver.actions({ async: true }).sendKeys(Key.HOME).perform();
+  await driver.wait(
+    async () => Number(await seek.getAttribute("aria-valuenow")) <= 1,
+    2_000,
+    "video scrubber Home did not reset",
+  );
+  const seekLow = Number(await seek.getAttribute("aria-valuenow"));
+  await driver.actions({ async: true }).sendKeys(Key.ARROW_RIGHT).perform();
+  await driver.wait(
+    async () => Number(await seek.getAttribute("aria-valuenow")) > seekLow,
+    2_000,
+    "video scrubber ArrowRight did not increase",
+  );
+  summary.interactions.push({
+    label: "video scrubber",
+    before: seekLow,
+    after: Number(await seek.getAttribute("aria-valuenow")),
+  });
+
+  const mute = await driver.findElement(
+    By.css(
+      '[data-demo-case="video-media"] button[aria-label="Mute"], [data-demo-case="video-media"] button[aria-label="Unmute"]',
+    ),
+  );
+  const muteBefore = await mute.getAttribute("aria-label");
+  await mute.click();
+  await driver.wait(
+    async () => (await mute.getAttribute("aria-label")) !== muteBefore,
+    2_000,
+  );
+  summary.interactions.push({
+    label: "video mute",
+    before: muteBefore,
+    after: await mute.getAttribute("aria-label"),
+  });
+
+  const codeTabs = await driver.findElements(
+    By.css('[data-demo-case="wallpaper-zero-config"] .cb-tab'),
+  );
+  if (codeTabs.length < 2)
+    throw new Error("Public React/Vanilla code tabs are missing");
+  await driver.executeScript("arguments[0].focus()", codeTabs[1]);
+  await codeTabs[1].sendKeys(Key.ENTER);
+  await driver.wait(
+    async () => (await codeTabs[1].getAttribute("aria-selected")) === "true",
+    2_000,
+  );
+  const vanillaCode = await driver.findElement(
+    By.css('[data-demo-case="wallpaper-zero-config"] .cb-code'),
+  );
+  if (!(await vanillaCode.getText()).includes('@tomagranate/liquid-glass"'))
+    throw new Error("Vanilla example does not use the public package root");
+  await codeTabs[0].click();
+  await driver.wait(
+    async () => (await codeTabs[0].getAttribute("aria-selected")) === "true",
+    2_000,
+  );
+  if (
+    !(await vanillaCode.getText()).includes("@tomagranate/liquid-glass/react")
+  )
+    throw new Error("React example does not use the public React entry point");
+  summary.interactions.push({ label: "public code tabs", variants: 2 });
 
   const lens = await driver.findElement(
     By.css('[data-demo-case="draggable-lens"]'),
@@ -368,15 +678,41 @@ try {
       );
     }
     backends[demoCase] = await readBackend(element);
-    summary.cases.push({ demoCase, backends: backends[demoCase] });
-    await takeScreenshot(
-      `${String(summary.cases.length).padStart(2, "0")}-${demoCase}.png`,
+    const screenshot = await takeScreenshot(
+      `${String(summary.cases.length + 1).padStart(2, "0")}-${demoCase}.png`,
     );
+    const visual = analyzeVisualRoi(screenshot, await visibleRoi(element));
+    let sourceVisual = null;
+    if (["video-media", "canvas-media"].includes(demoCase)) {
+      const selector =
+        demoCase === "canvas-media" ? ".canvas-media-source" : "video";
+      const source = await element.findElement(By.css(selector));
+      sourceVisual = analyzeVisualRoi(screenshot, await visibleRoi(source));
+      if (!sourceVisual.pass) {
+        summary.failures.push(
+          `${demoCase}: registered media source is blank or visually collapsed ${JSON.stringify(sourceVisual)}`,
+        );
+      }
+    }
+    summary.cases.push({
+      demoCase,
+      backends: backends[demoCase],
+      visual,
+      sourceVisual,
+    });
+    if (!visual.pass) {
+      summary.failures.push(
+        `${demoCase}: visible ROI is blank or visually collapsed ${JSON.stringify(visual)}`,
+      );
+    }
   }
 
   const desktopSnapshot = await readPageSnapshot(backends);
   summary.desktop = desktopSnapshot;
   summary.failures.push(...validateDemoSnapshot(desktopSnapshot, browser));
+  const sceneSnapshot = await readSceneSnapshot();
+  summary.sceneContract = sceneSnapshot;
+  summary.failures.push(...validateSceneSnapshot(sceneSnapshot));
   await assertInteractions();
   await assertDiagnostics(backends);
   const desktopPageErrors = await driver.executeScript(
