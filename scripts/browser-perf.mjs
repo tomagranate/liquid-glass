@@ -11,6 +11,7 @@ import {
   summarize,
 } from "./lib/perf-analysis.mjs";
 import { scenarioMotionMode } from "../tests/perf/motion-policy.js";
+import { verifyPerfBuild } from "./lib/perf-build.mjs";
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -87,6 +88,7 @@ async function browserLogs() {
 }
 
 try {
+  await verifyPerfBuild(root);
   server = await startStaticServer(join(root, "dist/perf"));
   ({ driver, service } = await createBrandedDriver(browser));
   environment = {

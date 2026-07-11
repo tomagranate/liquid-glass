@@ -10,6 +10,14 @@ Run `npm run build && npm run build:perf`, then one of `npm run perf:chrome`,
 90-frame, three-repetition PR profile. Full runs collect at least 600 rAF frames
 over five repetitions, with two warmups and alternating control/effect order.
 
+Build order is significant: `npm run build` (including the build inside
+`npm run test:package`) cleans the root `dist/` directory. Therefore
+`npm run build:perf` must be the final root-dist build before a benchmark. The
+benchmark preflights `dist/perf/index.html`, every referenced asset, and the
+package-export source-map provenance before launching WebDriver. It fails
+immediately with the exact rebuild command when the fixture is missing or stale;
+it never auto-builds, and still writes the normal failure artifacts.
+
 Chrome and Firefox use Selenium Manager unless
 `LIQUID_GLASS_CHROMEDRIVER`/`LIQUID_GLASS_GECKODRIVER` override the driver.
 Browser binary overrides are `LIQUID_GLASS_CHROME_BINARY` and
