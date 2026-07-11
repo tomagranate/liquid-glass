@@ -266,6 +266,18 @@ or rebuild work. `getDiagnostics().backdropWorkload` exposes `lenses`,
 automated invariants. These thresholds are provisional and covered by the real
 branded-browser performance gate.
 
+Safari also has a separate aggregate painted-copy invariant. Each visible copy
+is charged its expanded physical filter area × its displacement/specular pass
+count. Real Safari 26.5 calibration found that one balanced 240×176 copy
+(~1.03M pixel-passes) remains usable, while eight copies still failed at
+24.5fps even after reducing them to DPR 1 and one pass. WebKit scopes therefore
+enter the configured native/tint fallback above 1,500,000 pixel-passes and
+restore copied refraction below 70% of that threshold. Chrome and Firefox copy
+routing is unchanged. `getDiagnostics().backgroundCopyWorkload` exposes the
+count, aggregate cost, tier, and the public
+`aggregate-background-copy-device-pixel-pass-budget` reason. Transitions are
+microtask-coalesced; offscreen and destroyed lenses do not contribute.
+
 ### `setBackground(bg: string | null)`
 
 Set/override the implicit page background (any CSS background value), or pass

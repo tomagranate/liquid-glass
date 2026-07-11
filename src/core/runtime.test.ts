@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BACKDROP_AGGREGATE_THRESHOLDS,
+  BACKGROUND_COPY_AGGREGATE_THRESHOLDS,
   type ScopeRuntime,
   updateBackdropWorkload,
+  updateBackgroundCopyWorkload,
 } from "./runtime.js";
 
 function fakeRuntime(): ScopeRuntime {
@@ -26,12 +28,21 @@ function fakeRuntime(): ScopeRuntime {
         tier: "full",
         reason: "within-aggregate-backdrop-budget",
       },
+      backgroundCopyWorkload: {
+        lenses: 0,
+        devicePixelPassArea: 0,
+        tier: "full",
+        reason: "within-aggregate-background-copy-budget",
+      },
       policy: [],
     },
     backdropWorkloads: new Map(),
     backdropDevicePixelPassArea: 0,
     backdropQualityCounts: { performance: 0, balanced: 0, fidelity: 0 },
     backdropRefreshQueued: false,
+    backgroundCopyWorkloads: new Map(),
+    backgroundCopyDevicePixelPassArea: 0,
+    backgroundCopyRefreshQueued: false,
     background: null,
     destroyed: false,
   };
@@ -95,5 +106,51 @@ describe("aggregate backdrop workload", () => {
       BACKDROP_AGGREGATE_THRESHOLDS.fidelity,
     );
     expect(BACKDROP_AGGREGATE_THRESHOLDS.fidelity).toBe(3_000_000);
+  });
+});
+
+describe("aggregate background-copy workload", () => {
+  it("falls back only on WebKit and restores below the hysteresis boundary", async () => {
+    const runtime = fakeRuntime();
+    const first = vi.fn();
+    const second = vi.fn();
+    const one = {};
+    const two = {};
+    updateBackgroundCopyWorkload(runtime, one, {
+      deviceArea: 343_440,
+      passMultiplier: 3,
+      engine: "webkit",
+      refresh: first,
+    });
+    expect(runtime.diagnostics.backgroundCopyWorkload.tier).toBe("full");
+    updateBackgroundCopyWorkload(runtime, two, {
+      deviceArea: 343_440,
+      passMultiplier: 3,
+      engine: "webkit",
+      refresh: second,
+    });
+    expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
+      lenses: 2,
+      devicePixelPassArea: 2_060_640,
+      tier: "native",
+      reason: "aggregate-background-copy-device-pixel-pass-budget",
+    });
+    await Promise.resolve();
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+
+    updateBackgroundCopyWorkload(runtime, two, null);
+    expect(runtime.diagnostics.backgroundCopyWorkload.tier).toBe("full");
+    await Promise.resolve();
+    expect(first).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not change Chrome or Firefox copy routing", () => {
+    expect(BACKGROUND_COPY_AGGREGATE_THRESHOLDS.chromium).toBe(
+      Number.POSITIVE_INFINITY,
+    );
+    expect(BACKGROUND_COPY_AGGREGATE_THRESHOLDS.firefox).toBe(
+      Number.POSITIVE_INFINITY,
+    );
   });
 });

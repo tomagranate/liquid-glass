@@ -172,6 +172,13 @@ export interface GlassDiagnostics {
     readonly tier: "full" | "lean";
     readonly reason: string;
   };
+  /** Aggregate painted-copy cost and the WebKit safety tier it selected. */
+  readonly backgroundCopyWorkload: {
+    readonly lenses: number;
+    readonly devicePixelPassArea: number;
+    readonly tier: "full" | "native";
+    readonly reason: string;
+  };
   readonly policy: readonly {
     backend: GlassBackend;
     reason: string;

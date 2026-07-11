@@ -42,7 +42,13 @@ function countFrom(id) {
 function expectedBackend(id) {
   const ua = navigator.userAgent;
   if (id === "idle-teardown") return ["backdrop", "background-copy", "none"];
-  if (id.startsWith("background-copy")) return ["background-copy"];
+  if (id.startsWith("background-copy")) {
+    const denseWebKit =
+      /AppleWebKit\//.test(ua) &&
+      !/(?:Chrome|Chromium|Edg)\//.test(ua) &&
+      countFrom(id) > 1;
+    return denseWebKit ? ["native"] : ["background-copy"];
+  }
   if (id.startsWith("media-live")) return ["media-webgl"];
   if (id.startsWith("content-page")) return ["content-svg", "native"];
   if (id.startsWith("content-") || id === "mixed")

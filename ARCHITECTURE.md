@@ -177,6 +177,18 @@ remains compositor-only. Offscreen, destroyed, painted-copy, content, and media
 lenses do not contribute. `GlassDiagnostics.backdropWorkload` makes the active
 tier and measured workload inspectable.
 
+Painted copies have a separate engine-aware aggregate budget because Safari's
+cost remains catastrophic even after reducing the SVG chain. WebKit charges
+each visible copy's expanded physical area multiplied by displacement and
+specular passes. Above the provisional 1,500,000 pixel-pass threshold the scope
+uses its native/tint fallback; copied refraction returns below 70%. This keeps a
+single calibrated copy at full fidelity while dense scrolling copies degrade
+before they collapse frame rate. Chrome and Firefox use an infinite aggregate
+copy threshold, preserving their existing routing. Tier transitions use the
+same coalesced-refresh discipline, and
+`GlassDiagnostics.backgroundCopyWorkload` reports the measured total and
+reason.
+
 Explicit backgrounds opt out: a `background:` CSS *string* is an arbitrary value,
 not the real backdrop, so the compositor cannot sample it — it stays on the
 painted-copy path even on Chromium. `background: false` still means no copy.
@@ -338,6 +350,10 @@ same-scope `opts.surfaces` list):
    quality caps/adaptive chroma are resolved; the WebKit hard dimension uses
    those expanded bounds. Backdrop carriers and WebGL use raw bounds because
    they do not allocate that expanded SVG source region.
+   WebKit additionally applies a scope-wide 1,500,000 physical pixel-pass cap
+   to painted copies, with 70% exit hysteresis. Exceeding it reports
+   `aggregate-background-copy-device-pixel-pass-budget` and selects the
+   configured fallback.
 
 CSS-only props (`backdrop`, `tint`, `rimLight`, `shadow`) are deliberately
 excluded from the map/filter rebuild signature, so a colour or opacity change

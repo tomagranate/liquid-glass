@@ -58,3 +58,20 @@ On the same branded Chrome run, the effect measured p50 8.3ms, p95 8.4ms, p99
 9.4ms, max 9.5ms, 119.98fps and zero calibrated drop; control p95 was 9.2ms at
 120.03fps. The unchanged threshold passed. Smaller 1- and 8-lens scenarios stay
 eligible for full quality and remain separate regression gates.
+
+## Safari painted-copy calibration
+
+The background-copy gates intentionally use the final production copy path.
+On real Safari 26.5, one balanced copy passed at p95 23ms and 46.35fps. Eight
+balanced copies collapsed to p95 182ms and 5.84fps. A controlled public
+`quality: "performance"` run (DPR 1, chroma/specular off) improved eight copies
+to p95 43ms and 24.49fps but still failed with a 0.989 drop ratio. This rules out
+pass reduction as a sufficient dense-copy policy.
+
+Production therefore keeps WebKit copies below a provisional 1,500,000
+physical pixel-pass aggregate and selects the configured native/tint fallback
+above it. The threshold retains one full-quality fixture copy (~1.03M) while
+8/32-copy cases degrade before timing. Chrome and Firefox have no aggregate
+copy cap. The 70% exit boundary, coalesced refresh, backend transition, filter
+pass removal/restoration, and diagnostics reason have structural coverage; the
+unchanged real Safari gates validate the resulting behavior.

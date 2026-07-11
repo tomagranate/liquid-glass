@@ -18,6 +18,12 @@ export interface MutableDiagnostics {
     tier: "full" | "lean";
     reason: string;
   };
+  backgroundCopyWorkload: {
+    lenses: number;
+    devicePixelPassArea: number;
+    tier: "full" | "native";
+    reason: string;
+  };
   policy: Array<{
     backend: import("./types.js").GlassBackend;
     reason: string;
@@ -44,6 +50,9 @@ export interface ScopeRuntime {
     number
   >;
   backdropRefreshQueued: boolean;
+  readonly backgroundCopyWorkloads: Map<object, BackgroundCopyWorkload>;
+  backgroundCopyDevicePixelPassArea: number;
+  backgroundCopyRefreshQueued: boolean;
   background: string | null;
   destroyed: boolean;
 }
@@ -55,6 +64,13 @@ export interface BackdropWorkload {
   refresh(): void;
 }
 
+export interface BackgroundCopyWorkload {
+  deviceArea: number;
+  passMultiplier: number;
+  engine: import("./policy.js").GlassEngine;
+  refresh(): void;
+}
+
 export const BACKDROP_AGGREGATE_THRESHOLDS = {
   performance: 0,
   balanced: 1_500_000,
@@ -62,6 +78,19 @@ export const BACKDROP_AGGREGATE_THRESHOLDS = {
 } as const;
 
 const BACKDROP_EXIT_HYSTERESIS = 0.8;
+
+/**
+ * Calibrated against real Safari 26.5: one balanced 240x176 copy costs about
+ * 1.03M device-pixel passes and remains usable, while eight lean copies still
+ * miss the gate at 24.5fps. Other engines retain their existing copy path.
+ */
+export const BACKGROUND_COPY_AGGREGATE_THRESHOLDS = {
+  chromium: Number.POSITIVE_INFINITY,
+  firefox: Number.POSITIVE_INFINITY,
+  webkit: 1_500_000,
+} as const;
+
+const BACKGROUND_COPY_EXIT_HYSTERESIS = 0.7;
 
 /** Update one visible backdrop lens and coalesce any tier transition refresh. */
 export function updateBackdropWorkload(
@@ -126,6 +155,61 @@ export function updateBackdropWorkload(
   });
 }
 
+/** Update one visible painted copy and coalesce a WebKit safety-tier change. */
+export function updateBackgroundCopyWorkload(
+  runtime: ScopeRuntime | undefined,
+  key: object,
+  workload: BackgroundCopyWorkload | null,
+): void {
+  if (!runtime) return;
+  const previousWorkload = runtime.backgroundCopyWorkloads.get(key);
+  if (previousWorkload) {
+    runtime.backgroundCopyDevicePixelPassArea -=
+      previousWorkload.deviceArea * previousWorkload.passMultiplier;
+  }
+  if (workload) {
+    runtime.backgroundCopyWorkloads.set(key, workload);
+    runtime.backgroundCopyDevicePixelPassArea +=
+      workload.deviceArea * workload.passMultiplier;
+  } else {
+    runtime.backgroundCopyWorkloads.delete(key);
+  }
+
+  const total = Math.max(0, runtime.backgroundCopyDevicePixelPassArea);
+  runtime.backgroundCopyDevicePixelPassArea = total;
+  const engine =
+    workload?.engine ??
+    runtime.backgroundCopyWorkloads.values().next().value?.engine ??
+    "chromium";
+  const threshold = BACKGROUND_COPY_AGGREGATE_THRESHOLDS[engine];
+  const previous = runtime.diagnostics.backgroundCopyWorkload.tier;
+  const next =
+    previous === "native"
+      ? total < threshold * BACKGROUND_COPY_EXIT_HYSTERESIS
+        ? "full"
+        : "native"
+      : total > threshold
+        ? "native"
+        : "full";
+  runtime.diagnostics.backgroundCopyWorkload = {
+    lenses: runtime.backgroundCopyWorkloads.size,
+    devicePixelPassArea: total,
+    tier: next,
+    reason:
+      next === "native"
+        ? "aggregate-background-copy-device-pixel-pass-budget"
+        : "within-aggregate-background-copy-budget",
+  };
+  if (next === previous || runtime.backgroundCopyRefreshQueued) return;
+  runtime.backgroundCopyRefreshQueued = true;
+  queueMicrotask(() => {
+    runtime.backgroundCopyRefreshQueued = false;
+    if (runtime.destroyed) return;
+    for (const entry of runtime.backgroundCopyWorkloads.values())
+      entry.refresh();
+  });
+}
+
 export function diagnosticsSnapshot(
   value: MutableDiagnostics,
 ): GlassDiagnostics {
@@ -133,6 +217,9 @@ export function diagnosticsSnapshot(
     ...value,
     policy: Object.freeze([...value.policy]),
     backdropWorkload: Object.freeze({ ...value.backdropWorkload }),
+    backgroundCopyWorkload: Object.freeze({
+      ...value.backgroundCopyWorkload,
+    }),
   });
 }
 

@@ -22,6 +22,9 @@ function runtimeOf(options: GlassScopeOptions = {}): ScopeRuntime {
     backdropDevicePixelPassArea: 0,
     backdropQualityCounts: { performance: 0, balanced: 0, fidelity: 0 },
     backdropRefreshQueued: false,
+    backgroundCopyWorkloads: new Map(),
+    backgroundCopyDevicePixelPassArea: 0,
+    backgroundCopyRefreshQueued: false,
     defaults,
     budgets,
     diagnostics: {
@@ -38,6 +41,12 @@ function runtimeOf(options: GlassScopeOptions = {}): ScopeRuntime {
         devicePixelPassArea: 0,
         tier: "full",
         reason: "within-aggregate-backdrop-budget",
+      },
+      backgroundCopyWorkload: {
+        lenses: 0,
+        devicePixelPassArea: 0,
+        tier: "full",
+        reason: "within-aggregate-background-copy-budget",
       },
       policy: [],
     },

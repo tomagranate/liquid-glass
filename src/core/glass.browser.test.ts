@@ -298,6 +298,84 @@ describe("browser: content surfaces", () => {
   });
 });
 
+describe("browser: aggregate background-copy policy", () => {
+  beforeEach(stubOutBackdropTier);
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = "";
+    document.body.style.cssText = "";
+  });
+
+  it("keeps one full copy but routes dense WebKit copies to native and restores", async () => {
+    document.body.style.cssText =
+      "margin:0;overflow:hidden;background:linear-gradient(135deg,#f64,#35f);";
+    const scope = createGlassScope({ quality: "balanced", fallback: "blur" });
+    const elements: HTMLElement[] = [];
+    const handles: ReturnType<typeof scope.glass>[] = [];
+    const addLens = (): void => {
+      const element = document.createElement("div");
+      element.style.cssText =
+        "position:fixed;left:20px;top:20px;width:240px;height:176px;";
+      document.body.appendChild(element);
+      elements.push(element);
+      handles.push(
+        scope.glass(element, {
+          background: "linear-gradient(135deg,#f64,#35f)",
+          chroma: 0.4,
+        }),
+      );
+    };
+    const displacementPasses = (element: HTMLElement): number => {
+      const filterId = extractFilterId(
+        element.querySelector<HTMLElement>(":scope > .lg-bg")?.style.filter ??
+          "",
+      );
+      return (
+        document
+          .getElementById(filterId ?? "")
+          ?.querySelectorAll("feDisplacementMap").length ?? 0
+      );
+    };
+
+    addLens();
+    expect(handles[0]?.backends).toEqual(["background-copy"]);
+    expect(displacementPasses(elements[0])).toBe(3);
+
+    for (let index = 1; index < 4; index++) addLens();
+    if (isSafariEngine()) {
+      await vi.waitFor(() => {
+        expect(handles.every((handle) => handle.backends[0] === "native")).toBe(
+          true,
+        );
+      });
+      expect(scope.getDiagnostics().backgroundCopyWorkload).toMatchObject({
+        lenses: 4,
+        tier: "native",
+        reason: "aggregate-background-copy-device-pixel-pass-budget",
+      });
+      expect(
+        elements.every((element) => displacementPasses(element) === 0),
+      ).toBe(true);
+
+      while (handles.length > 1) {
+        handles.pop()?.destroy();
+        elements.pop()?.remove();
+      }
+      await vi.waitFor(() => {
+        expect(handles[0]?.backends).toEqual(["background-copy"]);
+        expect(displacementPasses(elements[0])).toBe(3);
+      });
+    } else {
+      expect(
+        handles.every((handle) => handle.backends[0] === "background-copy"),
+      ).toBe(true);
+      expect(scope.getDiagnostics().backgroundCopyWorkload.tier).toBe("full");
+    }
+
+    scope.destroy();
+  });
+});
+
 describe("browser: background copy (.lg-bg)", () => {
   beforeEach(stubOutBackdropTier);
   afterEach(() => {

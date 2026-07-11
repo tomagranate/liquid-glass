@@ -53,6 +53,7 @@ import {
   recordPolicy,
   type ScopeRuntime,
   updateBackdropWorkload,
+  updateBackgroundCopyWorkload,
 } from "./runtime.js";
 import {
   ContentSurface,
@@ -357,6 +358,17 @@ export function glass(
           specular: 0,
         },
         reason: runtime.diagnostics.backdropWorkload.reason,
+      };
+    }
+    if (
+      desiredBackend === "background-copy" &&
+      decision.backend === "background-copy" &&
+      runtime?.diagnostics.backgroundCopyWorkload.tier === "native"
+    ) {
+      decision = {
+        ...decision,
+        backend: material.fallback === "none" ? "none" : "native",
+        reason: runtime.diagnostics.backgroundCopyWorkload.reason,
       };
     }
     recordPolicy(runtime, decision);
@@ -665,6 +677,41 @@ export function glass(
     else if (backdropEligible()) mode = "backdrop";
     else if (unionCovers(lensRect, coveringRects)) mode = "hidden";
     else mode = "paint";
+
+    if (mode === "paint" && runtime) {
+      const desired = resolveMaterial(
+        opts,
+        Math.round(lensRect.width),
+        Math.round(lensRect.height),
+      );
+      const engine = detectEngine();
+      const standalone = chooseGlassPolicy({
+        engine,
+        desiredBackend: "background-copy",
+        quality: desired.quality,
+        fallback: desired.fallback,
+        material: desired,
+        width: lensRect.width,
+        height: lensRect.height,
+        dpr: window.devicePixelRatio || 1,
+        budgets: runtime.budgets,
+      });
+      if (standalone.backend === "background-copy") {
+        updateBackgroundCopyWorkload(runtime, key, {
+          deviceArea: standalone.deviceArea,
+          passMultiplier:
+            1 +
+            (standalone.effectiveMaterial.chroma > 0 ? 2 : 0) +
+            (standalone.effectiveMaterial.specular > 0 ? 1 : 0),
+          engine,
+          refresh: () => sync(true),
+        });
+      } else {
+        updateBackgroundCopyWorkload(runtime, key, null);
+      }
+    } else {
+      updateBackgroundCopyWorkload(runtime, key, null);
+    }
 
     if (mode !== "backdrop") removeSpecOverlay();
     panel.applyChrome(chromeOf(opts, anyNative && fallback === "none"));
@@ -1006,6 +1053,7 @@ export function glass(
       panel.destroy();
       if (runtime?.lenses.delete(handle)) runtime.diagnostics.lenses--;
       updateBackdropWorkload(runtime, key, null);
+      updateBackgroundCopyWorkload(runtime, key, null);
     },
   };
   runtime?.lenses.add(handle);
