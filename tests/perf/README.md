@@ -28,6 +28,29 @@ Local Safari requires Safari Settings → Developer → **Allow remote automatio
 If hosted `macos-15` cannot enable it through `sudo safaridriver --enable`, the
 job must fail and move to a preconfigured self-hosted Mac—never relabel WebKit.
 
+## Production demo tour
+
+`npm run test:demo:all` builds the package and demo, serves
+`examples/demo/dist`, then visits every stable `data-demo-case` with the same
+branded ChromeDriver, geckodriver, and native SafariDriver sessions. The tour
+asserts backend diagnostics, named keyboard/pointer controls, exactly 32 density
+lenses, startup/page errors, reduced-motion CSS, duplicate IDs, accessible
+control names, input names, and mobile horizontal overflow. Case screenshots,
+a mobile screenshot, console output, browser identity, and the result summary
+are written to `artifacts/demo-tour/<browser>`.
+
+To tour one already-built production demo without rebuilding:
+
+```sh
+node scripts/browser-demo-tour.mjs --browser=chrome
+node scripts/browser-demo-tour.mjs --browser=firefox
+node scripts/browser-demo-tour.mjs --browser=safari
+```
+
+Safari uses the same render-scheduling preflight as the performance gate. Its
+automation window must remain visible on an unlocked macOS console; `caffeinate`
+prevents sleep but does not fake focus or replace Safari with another engine.
+
 Every run writes raw samples, summaries, environment identity, console/driver
 logs, screenshots, and ROI proofs under `artifacts/performance/<browser>`, even
 on failure. Threshold JSON is versioned and provisional. Baselines never update

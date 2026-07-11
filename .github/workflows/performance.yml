@@ -35,6 +35,8 @@ jobs:
       - name: Enable real SafariDriver
         continue-on-error: true
         run: sudo /usr/bin/safaridriver --enable
+      - name: Production demo tour in real branded browsers
+        run: node scripts/browser-demo-all.mjs
       - name: Real branded browser quick gate
         if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && !inputs.full)
         run: npm run perf:all -- --quick=true
@@ -50,5 +52,7 @@ jobs:
         if: always()
         with:
           name: real-browser-performance-${{ github.run_id }}
-          path: artifacts/performance
+          path: |
+            artifacts/performance
+            artifacts/demo-tour
           if-no-files-found: warn
