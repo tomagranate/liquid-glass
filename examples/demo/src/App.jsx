@@ -904,6 +904,12 @@ function ScopeIsolationCase() {
 
 function DiagnosticsPanel() {
   const diagnostics = useGlassDiagnostics();
+  const invariantWindow = useRef({
+    diagnostics: null,
+    geometry: null,
+    media: null,
+    label: "pending — awaiting second sample",
+  });
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(CATALOGUE_CASES.wallpaper);
   const [snapshot, setSnapshot] = useState({
@@ -926,6 +932,31 @@ function DiagnosticsPanel() {
 
   useEffect(() => {
     const read = () => {
+      const previous = invariantWindow.current;
+      let invariant = previous.label;
+      if (previous.diagnostics !== diagnostics) {
+        if (previous.geometry != null && previous.media != null) {
+          const geometryDelta = Math.max(
+            0,
+            diagnostics.geometryRafCallbacks - previous.geometry,
+          );
+          const mediaDelta = Math.max(
+            0,
+            diagnostics.mediaRafCallbacks - previous.media,
+          );
+          const callbacks = geometryDelta + mediaDelta;
+          invariant =
+            callbacks === 0
+              ? "idle — no callbacks this window"
+              : `active — ${callbacks} callbacks this window`;
+        }
+        invariantWindow.current = {
+          diagnostics,
+          geometry: diagnostics.geometryRafCallbacks,
+          media: diagnostics.mediaRafCallbacks,
+          label: invariant,
+        };
+      }
       const root = document.querySelector(`[data-demo-case="${selected}"]`);
       const lenses = [...(root?.querySelectorAll("[data-lg-backend]") ?? [])];
       if (root?.matches("[data-lg-backend]")) lenses.unshift(root);
@@ -952,14 +983,10 @@ function DiagnosticsPanel() {
         dpr: diagnostics.policy.at(-1)?.dpr,
         chroma: diagnostics.policy.at(-1)?.chroma,
         surfaces: diagnostics.contentSurfaces + diagnostics.mediaSurfaces,
-        idle:
-          diagnostics.geometryRafCallbacks === 0 &&
-          diagnostics.mediaRafCallbacks === 0,
+        invariant,
       });
     };
     read();
-    const timer = window.setInterval(read, 750);
-    return () => window.clearInterval(timer);
   }, [diagnostics, selected]);
 
   const engine = /Firefox/i.test(navigator.userAgent)
@@ -1019,8 +1046,8 @@ function DiagnosticsPanel() {
             </dd>
           </div>
           <div>
-            <dt>Invariant state</dt>
-            <dd>{snapshot.idle ? "idle-safe" : "live media"}</dd>
+            <dt>Polling-window invariant</dt>
+            <dd>{snapshot.invariant}</dd>
           </div>
         </dl>
       )}

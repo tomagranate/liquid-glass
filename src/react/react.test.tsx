@@ -207,6 +207,25 @@ describe("react bindings", () => {
     expect(scoped.getDiagnostics).toHaveBeenCalled();
   });
 
+  it("useGlassDiagnostics produces successive snapshots on its polling cadence", () => {
+    vi.useFakeTimers();
+    function ReadDiagnostics() {
+      useGlassDiagnostics(500);
+      return null;
+    }
+    render(
+      <GlassRoot>
+        <ReadDiagnostics />
+      </GlassRoot>,
+    );
+    expect(scoped.getDiagnostics).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(499));
+    expect(scoped.getDiagnostics).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(1));
+    expect(scoped.getDiagnostics).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it("<Glass> passes options to glass() and spreads DOM props on the host", () => {
     const onBackendChange = vi.fn();
     render(

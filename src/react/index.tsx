@@ -72,7 +72,6 @@ export function useGlassDiagnostics(interval = 500): GlassDiagnostics {
   const [diagnostics, setDiagnostics] = useState(() => scope.getDiagnostics());
 
   useEffect(() => {
-    setDiagnostics(scope.getDiagnostics());
     if (interval <= 0) return;
     const timer = window.setInterval(
       () => setDiagnostics(scope.getDiagnostics()),
