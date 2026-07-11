@@ -12,6 +12,7 @@ import {
 } from "./lib/perf-analysis.mjs";
 import { scenarioMotionMode } from "../tests/perf/motion-policy.js";
 import { verifyPerfBuild } from "./lib/perf-build.mjs";
+import { clickAndWaitForInteraction } from "./lib/interaction-wait.mjs";
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -208,11 +209,20 @@ try {
       );
 
     await executeAsync("mount", { scenario, effect: true });
+    const resetInteractionCount = await executeAsync("resetInteractions");
+    if (resetInteractionCount !== 0)
+      throw new Error(
+        `${scenario}: interaction fixture reset returned ${resetInteractionCount}`,
+      );
     const interactionElement = await driver.findElement(By.id("interaction"));
     for (let interaction = 0; interaction < 5; interaction++) {
-      await interactionElement.click();
-      await driver.sleep(80);
+      await clickAndWaitForInteraction(
+        driver,
+        interactionElement,
+        interaction + 1,
+      );
     }
+    await executeAsync("settle");
     const interactions = await driver.executeScript(
       "return window.__liquidGlassPerf.interactionResults",
     );

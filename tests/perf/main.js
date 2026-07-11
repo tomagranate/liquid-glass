@@ -9,6 +9,11 @@ import "./style.css";
 const app = document.querySelector("#app");
 let current = null;
 let interactionResults = [];
+
+function resetInteractions() {
+  interactionResults = [];
+  return interactionResults.length;
+}
 const pageErrors = [];
 const originalConsoleError = console.error.bind(console);
 console.error = (...values) => {
@@ -101,6 +106,7 @@ function animateCanvas(canvas, state) {
 
 async function mount({ scenario, effect }) {
   await teardown();
+  resetInteractions();
   const count = countFrom(scenario);
   app.innerHTML = markup(scenario, count);
   document.body.dataset.scenario = scenario;
@@ -211,7 +217,7 @@ async function calibrate(frames = 60) {
 }
 
 async function runFrames({ scenario, effect, frames, injectWork = 0 }) {
-  interactionResults = [];
+  resetInteractions();
   const mounted = await mount({ scenario, effect });
   const calibratedInterval = await calibrate(30);
   const stamps = [];
@@ -267,6 +273,7 @@ window.__liquidGlassPerf = {
   snapshot,
   teardown,
   mount,
+  resetInteractions,
   get interactionResults() {
     return interactionResults;
   },
