@@ -516,6 +516,7 @@ async function assertInteractions() {
     `const video=arguments[0], control=arguments[1];
      const vr=video.getBoundingClientRect(), cr=control.getBoundingClientRect();
      const style=getComputedStyle(control);
+     const sheen=getComputedStyle(control.querySelector('.lg-sheen'));
      const color=style.backgroundColor.split(/[(), ]+/).map(Number).filter(Number.isFinite);
      return {
        paused: video.paused,
@@ -527,6 +528,11 @@ async function assertInteractions() {
        controlBackground: style.backgroundColor,
        controlBackgroundAlpha: color.length > 3 ? color[3] : 1,
        controlBackend: control.dataset.lgBackend,
+       controlWaiting: control.hasAttribute('data-waiting'),
+       controlBackdropFilter: style.backdropFilter || style.webkitBackdropFilter,
+       controlBoxShadow: style.boxShadow,
+       sheenBackground: sheen.backgroundImage,
+       sheenBoxShadow: sheen.boxShadow,
        controlOpacity: Number(style.opacity),
        centerDeltaX: Math.abs((vr.left + vr.width / 2) - (cr.left + cr.width / 2)),
        centerDeltaY: Math.abs((vr.top + vr.height / 2) - (cr.top + cr.height / 2)),
@@ -538,10 +544,18 @@ async function assertInteractions() {
     !initialVideo.paused ||
     initialVideo.controlLabel !== "Play" ||
     !initialVideo.poster ||
-    initialVideo.controlBackgroundAlpha <= 0 ||
-    initialVideo.controlBackgroundAlpha >= 0.8 ||
-    !initialVideo.controlBackend ||
-    initialVideo.controlBackend === "none" ||
+    initialVideo.controlBackgroundAlpha < 0.2 ||
+    initialVideo.controlBackgroundAlpha > 0.65 ||
+    initialVideo.controlBackend !== "none" ||
+    !initialVideo.controlWaiting ||
+    (initialVideo.controlBackdropFilter &&
+      initialVideo.controlBackdropFilter !== "none") ||
+    !initialVideo.controlBoxShadow ||
+    initialVideo.controlBoxShadow === "none" ||
+    !initialVideo.sheenBackground ||
+    initialVideo.sheenBackground === "none" ||
+    !initialVideo.sheenBoxShadow ||
+    initialVideo.sheenBoxShadow === "none" ||
     initialVideo.controlOpacity < 0.95 ||
     initialVideo.centerDeltaX > 2 ||
     initialVideo.centerDeltaY > 2
@@ -556,7 +570,13 @@ async function assertInteractions() {
     initialControlShot,
     initialControlRoi,
   );
-  if (!initialControlVisual.pass || initialControlVisual.meanLuminance < 12) {
+  if (
+    !initialControlVisual.pass ||
+    initialControlVisual.meanLuminance < 35 ||
+    initialControlVisual.luminanceRange < 80 ||
+    initialControlVisual.variance < 100 ||
+    initialControlVisual.edgeMean < 0.8
+  ) {
     throw new Error(
       `Initial video control is blank or black: ${JSON.stringify(initialControlVisual)}`,
     );
@@ -571,16 +591,24 @@ async function assertInteractions() {
     4_000,
     "video did not enter playing state",
   );
-  const playingShot = await takeScreenshot("video-playing.png");
-  const initialControlProof = compareRoi(
-    initialControlShot,
-    playingShot,
-    initialControlRoi,
+  const readPlayingControlBackends = () =>
+    driver.executeScript(`
+      return [...document.querySelectorAll(
+        '[data-demo-case="video-media"] .glassx-video-scrub, [data-demo-case="video-media"] .glassx-video-ctl'
+      )].map((control) => control.dataset.lgBackend || 'missing');
+    `);
+  await driver.wait(
+    async () => {
+      const backends = await readPlayingControlBackends();
+      return (
+        backends.length > 0 &&
+        backends.every((value) => value.split(",").includes("media-webgl"))
+      );
+    },
+    4_000,
+    "playing video controls did not switch to media-webgl",
   );
-  if (!initialControlProof.pass)
-    throw new Error(
-      `Initial video glass control has no visible rendered state: ${JSON.stringify(initialControlProof)}`,
-    );
+  const playingControlBackends = await readPlayingControlBackends();
   await video.click();
   await driver.wait(
     async () =>
@@ -591,12 +619,52 @@ async function assertInteractions() {
     4_000,
     "video did not return to paused state",
   );
+  const pausedPaint = await driver.executeAsyncScript(`
+    const done=arguments[arguments.length-1];
+    const stamps=[];
+    const tick=(time) => {
+      stamps.push(time);
+      if (stamps.length < 3) requestAnimationFrame(tick);
+      else setTimeout(() => done({
+        stamps,
+        controlPresent:Boolean(document.querySelector('[data-demo-case="video-media"] .glassx-video-bigplay')),
+        paused:document.querySelector('[data-demo-case="video-media"] video')?.paused,
+      }), 0);
+    };
+    requestAnimationFrame(tick);
+  `);
+  if (pausedPaint.controlPresent || !pausedPaint.paused)
+    throw new Error(
+      `Video did not reach a stable control-free paused paint: ${JSON.stringify(pausedPaint)}`,
+    );
+  const pausedShot = await takeScreenshot("video-paused-control-free.png");
+  const initialControlProof = compareRoi(
+    initialControlShot,
+    pausedShot,
+    initialControlRoi,
+  );
+  const pausedSourceVisual = analyzeVisualRoi(
+    pausedShot,
+    await visibleRoi(video),
+  );
+  if (
+    !initialControlProof.pass ||
+    initialControlProof.changedRatio < 0.2 ||
+    !pausedSourceVisual.pass ||
+    pausedSourceVisual.meanLuminance < 12
+  )
+    throw new Error(
+      `Initial video glass control did not visibly disappear from a healthy paused frame: removal=${JSON.stringify(initialControlProof)} source=${JSON.stringify(pausedSourceVisual)}`,
+    );
   summary.interactions.push({
     label: "video play states",
     initial: initialVideo,
     transitions: ["paused", "playing", "paused"],
+    playingControlBackends,
     initialControlVisual,
     initialControlProof,
+    pausedPaint,
+    pausedSourceVisual,
   });
 
   const seek = await driver.findElement(
@@ -861,7 +929,7 @@ try {
       By.css(`[data-demo-case="${demoCase}"]`),
     );
     await scrollTo(element);
-    if (BACKEND_CASES.includes(demoCase)) {
+    if (BACKEND_CASES.includes(demoCase) && demoCase !== "video-media") {
       await driver.wait(
         async () =>
           (await readBackend(element)).some((backend) => backend !== "none"),

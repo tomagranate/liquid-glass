@@ -33,8 +33,8 @@ const KNOWN_BACKENDS = new Set([
 
 export function expectedBackendFamily(browser, demoCase) {
   if (!BACKEND_CASES.includes(demoCase)) return [];
-  if (["video-media", "canvas-media"].includes(demoCase))
-    return ["media-webgl"];
+  if (demoCase === "canvas-media") return ["media-webgl"];
+  if (demoCase === "video-media") return ["none"];
   if (
     [
       "bounded-content-surface",
