@@ -255,6 +255,17 @@ lifecycle/work counters. SVG surface and background-copy costs include
 displacement, blur, and chroma reach beyond the raw source bounds; compositor
 backdrop and WebGL dimensions are not artificially expanded.
 
+Chromium scopes also enforce an aggregate live-backdrop invariant. Visible
+backdrop lenses are charged by physical pixel area × displacement passes. At
+1,500,000 balanced units (3,000,000 for fidelity; performance is always lean),
+the whole scope switches to a DPR-1, single-pass, no-specular chain. It restores
+full quality only below 80% of the threshold, preventing boundary churn. A tier
+change is one microtask-coalesced refresh; steady scrolling performs no policy
+or rebuild work. `getDiagnostics().backdropWorkload` exposes `lenses`,
+`devicePixelPassArea`, `tier`, and `reason` for production observability and
+automated invariants. These thresholds are provisional and covered by the real
+branded-browser performance gate.
+
 ### `setBackground(bg: string | null)`
 
 Set/override the implicit page background (any CSS background value), or pass
@@ -293,6 +304,10 @@ The library absorbs the things a refraction effect normally pushes onto you:
   keeps the rAF (and its Safari click-latency cost) fully off.
 - **Cross-engine budgets.** Provisional device-pixel budgets protect Chromium,
   Firefox's software displacement path, and WebKit's hard filter dimension.
+- **Aggregate Chromium workload adaptation.** A scope automatically collapses
+  many simultaneous compositor backdrop lenses to a one-pass chain, with
+  hysteresis and one coalesced refresh at each tier crossing. Small groups keep
+  full chroma; dense docks, grids, and particle-like layouts remain smooth.
 - **Chromium zero-lag scrolling.** On Chromium — the one engine that renders SVG
   `url()` filters in `backdrop-filter` — a default (`background: "auto"`) lens is
   refracted by the compositor at composite time instead of a JS-repositioned

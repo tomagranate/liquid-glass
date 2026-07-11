@@ -38,9 +38,15 @@ actually move lens boxes in JavaScript call `geometryChanged()`.
 
 An earlier transform-based fixture result was rejected because it injected 32
 manual geometry syncs per frame only into the effect case. After correction, a
-three-repetition branded Chrome run still showed a healthy 120fps control but a
-32-backdrop median near 99fps with a 0.202 calibrated drop ratio. The gate stays
-red. A future production change should consider aggregate scope policy—total
-active backdrop lens count/area could monotonically reduce map DPR/chroma or
-select a documented fallback—then be evaluated here. That adaptation is a
-proposal, not part of this harness revision.
+three-repetition branded Chrome run showed a healthy 120fps control but a
+32-backdrop median near 99fps with a 0.202 calibrated drop ratio, so the
+unchanged gate correctly stayed red.
+
+The production implementation now applies the scope's aggregate physical
+pixel-pass budget to that exact fixture. The controlled experiment and final
+policy both select the documented performance chain (DPR 1, one displacement
+pass, no live specular) once the 32-lens workload crosses the balanced threshold.
+On the same branded Chrome run, the effect measured p50 8.3ms, p95 8.4ms, p99
+9.4ms, max 9.5ms, 119.98fps and zero calibrated drop; control p95 was 9.2ms at
+120.03fps. The unchanged threshold passed. Smaller 1- and 8-lens scenarios stay
+eligible for full quality and remain separate regression gates.

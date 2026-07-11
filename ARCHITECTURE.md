@@ -159,6 +159,24 @@ this tier:
   surface's one shared filter forces is a **copy/content-path limitation only**
   now — it does not apply here.
 
+The scope also owns an aggregate backdrop workload policy. Each visible lens is
+charged `CSS width × CSS height × physical DPR² × displacement passes`, using
+its desired full-quality pass count so entering the lean tier cannot make the
+measurement oscillate. Balanced scopes enter lean mode above 1,500,000 units;
+fidelity scopes above 3,000,000; performance scopes are lean whenever a backdrop
+lens is active. A mixed scope uses its strictest participating quality. Lean
+mode fixes map DPR at 1 and removes chroma and specular, reducing the live chain
+to one displacement pass. Exit requires falling below 80% of the entry
+threshold.
+
+Tier changes update diagnostics synchronously and schedule one microtask that
+refreshes the current lens set. The refresh is coalesced across all additions or
+removals in that turn. Re-evaluating a lens without crossing a threshold does
+not queue work, and there is no policy rAF; after the crossing rebuild, scrolling
+remains compositor-only. Offscreen, destroyed, painted-copy, content, and media
+lenses do not contribute. `GlassDiagnostics.backdropWorkload` makes the active
+tier and measured workload inspectable.
+
 Explicit backgrounds opt out: a `background:` CSS *string* is an arbitrary value,
 not the real backdrop, so the compositor cannot sample it — it stays on the
 painted-copy path even on Chromium. `background: false` still means no copy.

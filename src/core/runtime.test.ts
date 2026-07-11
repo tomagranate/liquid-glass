@@ -1,0 +1,99 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  BACKDROP_AGGREGATE_THRESHOLDS,
+  type ScopeRuntime,
+  updateBackdropWorkload,
+} from "./runtime.js";
+
+function fakeRuntime(): ScopeRuntime {
+  return {
+    content: new Set(),
+    media: new Set(),
+    lenses: new Set(),
+    defaults: {},
+    diagnostics: {
+      lenses: 0,
+      contentSurfaces: 0,
+      mediaSurfaces: 0,
+      filterRebuilds: 0,
+      mapRegenerations: 0,
+      geometryRafCallbacks: 0,
+      mediaRafCallbacks: 0,
+      mediaUploads: 0,
+      backdropWorkload: {
+        lenses: 0,
+        devicePixelPassArea: 0,
+        tier: "full",
+        reason: "within-aggregate-backdrop-budget",
+      },
+      policy: [],
+    },
+    backdropWorkloads: new Map(),
+    backdropDevicePixelPassArea: 0,
+    backdropQualityCounts: { performance: 0, balanced: 0, fidelity: 0 },
+    backdropRefreshQueued: false,
+    background: null,
+    destroyed: false,
+  };
+}
+
+describe("aggregate backdrop workload", () => {
+  it("accounts add/remove/resize and coalesces one refresh per tier crossing", async () => {
+    const runtime = fakeRuntime();
+    const refreshes = Array.from({ length: 8 }, () => vi.fn());
+    const keys = refreshes.map(() => ({}));
+    for (let index = 0; index < keys.length; index++) {
+      updateBackdropWorkload(runtime, keys[index], {
+        deviceArea: 100_000,
+        passMultiplier: 3,
+        quality: "balanced",
+        refresh: refreshes[index],
+      });
+    }
+    expect(runtime.diagnostics.backdropWorkload).toMatchObject({
+      lenses: 8,
+      devicePixelPassArea: 2_400_000,
+      tier: "lean",
+      reason: "aggregate-backdrop-device-pixel-pass-budget",
+    });
+    await Promise.resolve();
+    expect(refreshes.every((refresh) => refresh.mock.calls.length === 1)).toBe(
+      true,
+    );
+
+    updateBackdropWorkload(runtime, keys[0], {
+      deviceArea: 120_000,
+      passMultiplier: 3,
+      quality: "balanced",
+      refresh: refreshes[0],
+    });
+    expect(runtime.diagnostics.backdropWorkload.devicePixelPassArea).toBe(
+      2_460_000,
+    );
+    await Promise.resolve();
+    expect(refreshes[0]).toHaveBeenCalledTimes(1);
+
+    for (let index = 0; index < 5; index++) {
+      updateBackdropWorkload(runtime, keys[index], null);
+    }
+    expect(runtime.diagnostics.backdropWorkload).toMatchObject({
+      lenses: 3,
+      devicePixelPassArea: 900_000,
+      tier: "full",
+    });
+    await Promise.resolve();
+    expect(
+      refreshes.slice(5).every((refresh) => refresh.mock.calls.length === 2),
+    ).toBe(true);
+  });
+
+  it("keeps quality thresholds monotonic with a fidelity hard cap", () => {
+    expect(BACKDROP_AGGREGATE_THRESHOLDS.performance).toBeLessThan(
+      BACKDROP_AGGREGATE_THRESHOLDS.balanced,
+    );
+    expect(BACKDROP_AGGREGATE_THRESHOLDS.balanced).toBeLessThan(
+      BACKDROP_AGGREGATE_THRESHOLDS.fidelity,
+    );
+    expect(BACKDROP_AGGREGATE_THRESHOLDS.fidelity).toBe(3_000_000);
+  });
+});

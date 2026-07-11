@@ -727,6 +727,35 @@ describe("glass routing", () => {
       warn.mockRestore();
     });
 
+    it("accounts visible backdrop workload across resize and offscreen removal", () => {
+      const scope = createGlassScope();
+      cleanups.push(() => scope.destroy());
+      const lensEl = addEl();
+      const box = setRect(lensEl, {
+        left: 10,
+        top: 10,
+        width: 100,
+        height: 50,
+      });
+      const handle = scope.glass(lensEl);
+      expect(scope.getDiagnostics().backdropWorkload).toMatchObject({
+        lenses: 1,
+        devicePixelPassArea: 15_000,
+        tier: "full",
+      });
+      box.width = 200;
+      handle.geometryChanged();
+      expect(scope.getDiagnostics().backdropWorkload.devicePixelPassArea).toBe(
+        30_000,
+      );
+      box.left = 2_000;
+      handle.geometryChanged();
+      expect(scope.getDiagnostics().backdropWorkload).toMatchObject({
+        lenses: 0,
+        devicePixelPassArea: 0,
+      });
+    });
+
     it("does no scroll work: a scrolled frame writes nothing on the bg", () => {
       const lensEl = addEl();
       setRect(lensEl, { left: 20, top: 30, width: 120, height: 50 });

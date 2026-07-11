@@ -18,6 +18,10 @@ function runtimeOf(options: GlassScopeOptions = {}): ScopeRuntime {
     content: new Set(),
     media: new Set(),
     lenses: new Set(),
+    backdropWorkloads: new Map(),
+    backdropDevicePixelPassArea: 0,
+    backdropQualityCounts: { performance: 0, balanced: 0, fidelity: 0 },
+    backdropRefreshQueued: false,
     defaults,
     budgets,
     diagnostics: {
@@ -29,6 +33,12 @@ function runtimeOf(options: GlassScopeOptions = {}): ScopeRuntime {
       geometryRafCallbacks: 0,
       mediaRafCallbacks: 0,
       mediaUploads: 0,
+      backdropWorkload: {
+        lenses: 0,
+        devicePixelPassArea: 0,
+        tier: "full",
+        reason: "within-aggregate-backdrop-budget",
+      },
       policy: [],
     },
     background: null,

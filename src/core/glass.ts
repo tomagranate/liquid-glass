@@ -49,7 +49,11 @@ import { bakeSpecularHighlight, generateDisplacementMap } from "./map.js";
 import { listMediaSurfaces, MediaSurface } from "./media.js";
 import { createPanel, type PanelChrome } from "./panel.js";
 import { chooseGlassPolicy, detectEngine } from "./policy.js";
-import { recordPolicy, type ScopeRuntime } from "./runtime.js";
+import {
+  recordPolicy,
+  type ScopeRuntime,
+  updateBackdropWorkload,
+} from "./runtime.js";
 import {
   ContentSurface,
   isSafariEngine,
@@ -328,7 +332,7 @@ export function glass(
     desiredBackend: GlassBackend,
   ): { material: ResolvedLensMaterial; backend: GlassBackend; reason: string } {
     const material = resolveMaterial(opts, width, height);
-    const decision = chooseGlassPolicy({
+    let decision = chooseGlassPolicy({
       engine: detectEngine(),
       desiredBackend,
       quality: material.quality,
@@ -339,6 +343,22 @@ export function glass(
       dpr: typeof window === "undefined" ? 1 : window.devicePixelRatio || 1,
       budgets: runtime?.budgets,
     });
+    if (
+      desiredBackend === "backdrop" &&
+      decision.backend === "backdrop" &&
+      runtime?.diagnostics.backdropWorkload.tier === "lean"
+    ) {
+      decision = {
+        ...decision,
+        effectiveMaterial: {
+          ...decision.effectiveMaterial,
+          dpr: 1,
+          chroma: 0,
+          specular: 0,
+        },
+        reason: runtime.diagnostics.backdropWorkload.reason,
+      };
+    }
     recordPolicy(runtime, decision);
     return {
       material: decision.effectiveMaterial,
@@ -405,6 +425,38 @@ export function glass(
       lensRect.left >= window.innerWidth ||
       lensRect.top >= window.innerHeight;
     const inactive = tooSmall || offscreen;
+    if (runtime && !inactive && backdropEligible()) {
+      const desired = resolveMaterial(
+        opts,
+        Math.round(lensRect.width),
+        Math.round(lensRect.height),
+      );
+      const standalone = chooseGlassPolicy({
+        engine: detectEngine(),
+        desiredBackend: "backdrop",
+        quality: desired.quality,
+        fallback: desired.fallback,
+        material: desired,
+        width: lensRect.width,
+        height: lensRect.height,
+        dpr: window.devicePixelRatio || 1,
+        budgets: runtime.budgets,
+      });
+      if (standalone.backend === "backdrop") {
+        const physicalDpr = window.devicePixelRatio || 1;
+        updateBackdropWorkload(runtime, key, {
+          deviceArea:
+            lensRect.width * lensRect.height * physicalDpr * physicalDpr,
+          passMultiplier: standalone.effectiveMaterial.chroma > 0 ? 3 : 1,
+          quality: desired.quality,
+          refresh: () => sync(true),
+        });
+      } else {
+        updateBackdropWorkload(runtime, key, null);
+      }
+    } else {
+      updateBackdropWorkload(runtime, key, null);
+    }
     const next = new Set<AnySurface>();
     const coveringRects: Box[] = [];
     let anyNative = false;
@@ -953,6 +1005,7 @@ export function glass(
       }
       panel.destroy();
       if (runtime?.lenses.delete(handle)) runtime.diagnostics.lenses--;
+      updateBackdropWorkload(runtime, key, null);
     },
   };
   runtime?.lenses.add(handle);

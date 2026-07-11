@@ -805,4 +805,76 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
       expect(bigEl.querySelector(".lg-spec")).toBeNull();
     },
   );
+
+  it.skipIf(!supportsBackdropUrlFilter())(
+    "adapts aggregate backdrop work once per threshold crossing and restores quality",
+    async () => {
+      document.body.style.cssText =
+        "margin:0;overflow:hidden;background:linear-gradient(90deg, rgb(255,0,0), rgb(0,0,255));";
+      setBackground(null);
+
+      const scope = createGlassScope({ quality: "balanced" });
+      const elements: HTMLElement[] = [];
+      const handles: ReturnType<typeof scope.glass>[] = [];
+      const addLens = (): void => {
+        const element = document.createElement("div");
+        element.style.cssText =
+          "position:fixed;left:10px;top:10px;width:200px;height:100px;";
+        document.body.appendChild(element);
+        elements.push(element);
+        handles.push(scope.glass(element, { chroma: 0.5 }));
+      };
+      const displacementPasses = (element: HTMLElement): number => {
+        const bg = element.querySelector<HTMLElement>(":scope > .lg-bg");
+        const id = bg?.style.backdropFilter.match(/#([^)"']+)/)?.[1];
+        return (
+          document
+            .getElementById(id ?? "")
+            ?.querySelectorAll("feDisplacementMap").length ?? 0
+        );
+      };
+
+      for (let index = 0; index < 8; index++) addLens();
+      expect(scope.getDiagnostics().backdropWorkload.tier).toBe("full");
+      expect(
+        elements.every((element) => displacementPasses(element) === 3),
+      ).toBe(true);
+
+      for (let index = 8; index < 32; index++) addLens();
+      await vi.waitFor(() => {
+        expect(scope.getDiagnostics().backdropWorkload.tier).toBe("lean");
+        expect(
+          elements.every((element) => displacementPasses(element) === 1),
+        ).toBe(true);
+      });
+      const leanDiagnostics = scope.getDiagnostics();
+      expect(leanDiagnostics.backdropWorkload.reason).toBe(
+        "aggregate-backdrop-device-pixel-pass-budget",
+      );
+      expect(
+        leanDiagnostics.policy[leanDiagnostics.policy.length - 1]?.reason,
+      ).toBe("aggregate-backdrop-device-pixel-pass-budget");
+
+      // A settled tier is inert: it must not create a rebuild loop.
+      const settledRebuilds = leanDiagnostics.filterRebuilds;
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      expect(scope.getDiagnostics().filterRebuilds).toBe(settledRebuilds);
+
+      for (let index = handles.length - 1; index >= 8; index--) {
+        handles[index]?.destroy();
+        handles.pop();
+        elements.pop()?.remove();
+      }
+      await vi.waitFor(() => {
+        expect(scope.getDiagnostics().backdropWorkload.tier).toBe("full");
+        expect(
+          elements.every((element) => displacementPasses(element) === 3),
+        ).toBe(true);
+      });
+
+      scope.destroy();
+    },
+  );
 });

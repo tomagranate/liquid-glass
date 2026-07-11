@@ -166,6 +166,12 @@ export interface GlassDiagnostics {
   readonly geometryRafCallbacks: number;
   readonly mediaRafCallbacks: number;
   readonly mediaUploads: number;
+  readonly backdropWorkload: {
+    readonly lenses: number;
+    readonly devicePixelPassArea: number;
+    readonly tier: "full" | "lean";
+    readonly reason: string;
+  };
   readonly policy: readonly {
     backend: GlassBackend;
     reason: string;
