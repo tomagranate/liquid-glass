@@ -51,7 +51,11 @@ export function GlassSlider({
   const thumbRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   useSurface(trackRef);
-  const handle = useGlass(thumbRef, { ...THUMB_GLASS, ...glass });
+  const handle = useGlass(thumbRef, {
+    ...THUMB_GLASS,
+    background: false,
+    ...glass,
+  });
 
   const pct = ((value - min) / (max - min)) * 100;
 

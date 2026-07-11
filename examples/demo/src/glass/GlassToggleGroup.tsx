@@ -53,7 +53,7 @@ export function GlassToggleGroup({
   const [pill, setPill] = useState({ left: 0, width: 0 });
 
   useSurface(trackRef);
-  const handle = useGlass(pillRef, PILL_GLASS);
+  const handle = useGlass(pillRef, { ...PILL_GLASS, background: false });
 
   useLayoutEffect(() => {
     const measure = () => {

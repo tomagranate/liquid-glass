@@ -22,6 +22,9 @@ const BAR_GLASS = {
   scale: 44,
   chroma: 0.6,
   specular: 0.6,
+  tint: "rgba(4,10,20,0.48)",
+  rimLight: 1.1,
+  shadow: "0 8px 24px rgba(0,0,0,0.42)",
 };
 const SCRUB_GLASS = {
   radius: 999,
@@ -29,6 +32,9 @@ const SCRUB_GLASS = {
   scale: 26,
   chroma: 0.2,
   specular: 0.2,
+  tint: "rgba(4,10,20,0.56)",
+  rimLight: 0.9,
+  shadow: "0 5px 18px rgba(0,0,0,0.4)",
 };
 const BUBBLE_GLASS = {
   radius: "50%" as const,
@@ -36,6 +42,9 @@ const BUBBLE_GLASS = {
   scale: 36,
   chroma: 0.7,
   specular: 0.6,
+  tint: "rgba(4,10,20,0.42)",
+  rimLight: 1.15,
+  shadow: "0 14px 36px rgba(0,0,0,0.46)",
 };
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -152,6 +161,25 @@ export function GlassVideoPlayer({
     const r = e.currentTarget.getBoundingClientRect();
     v.currentTime = ((e.clientX - r.left) / r.width) * v.duration;
   };
+  const seekWithKeyboard = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const v = videoRef.current;
+    if (
+      !v?.duration ||
+      !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)
+    ) {
+      return;
+    }
+    e.preventDefault();
+    if (e.key === "Home") v.currentTime = 0;
+    else if (e.key === "End") v.currentTime = v.duration;
+    else
+      v.currentTime = clamp(
+        v.currentTime + (e.key === "ArrowRight" ? 5 : -5),
+        0,
+        v.duration,
+      );
+    setProgress(v.currentTime / v.duration);
+  };
 
   return (
     <GlassMediaSurface
@@ -184,6 +212,7 @@ export function GlassVideoPlayer({
         className="glassx-video-ctl glassx-video-bigplay"
         data-hidden={playing}
         {...BUBBLE_GLASS}
+        background={false}
         style={{
           left: layout.bubble.x,
           top: layout.bubble.y,
@@ -200,6 +229,7 @@ export function GlassVideoPlayer({
       <Glass
         className="glassx-video-scrub"
         {...SCRUB_GLASS}
+        background={false}
         style={{
           left: layout.scrub.x,
           top: layout.scrub.y,
@@ -207,6 +237,7 @@ export function GlassVideoPlayer({
           height: layout.scrub.h,
         }}
         onPointerDown={seek}
+        onKeyDown={seekWithKeyboard}
         role="slider"
         aria-label="Seek"
         aria-valuenow={Math.round(progress * 100)}
@@ -225,6 +256,7 @@ export function GlassVideoPlayer({
         type="button"
         className="glassx-video-ctl"
         {...BAR_GLASS}
+        background={false}
         style={{
           left: layout.vol.x,
           top: layout.vol.y,

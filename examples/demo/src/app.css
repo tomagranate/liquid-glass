@@ -210,22 +210,21 @@ a {
   border-color: rgba(255, 255, 255, 0.3);
   color: #fff;
 }
-/* Fixed in the overlay layer (a sibling of the surface), so it refracts the
-   live page in place as it scrolls beneath. */
-.hero-lens {
-  position: fixed;
-  right: 6%;
-  top: 180px;
-  z-index: 5;
+.hero-wallpapers {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+.hero-wallpapers > span {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 13px;
+  font-weight: 550;
 }
 @media (max-width: 920px) {
   .hero {
     padding-top: 140px;
-  }
-  .hero-lens {
-    top: auto;
-    bottom: 90px;
-    right: calc(50% - 100px);
   }
 }
 
@@ -254,7 +253,7 @@ a {
   padding: 22px;
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 24px;
-  background: rgba(7, 9, 21, 0.34);
+  background: rgba(7, 9, 21, 0.46);
   outline: none;
 }
 .catalogue-card:focus-visible {
@@ -289,13 +288,73 @@ a {
   min-width: 0;
   margin-top: 22px;
 }
-.bounded-surface {
+.bounded-demo {
   position: relative;
   min-height: 210px;
+}
+.bounded-surface {
+  position: absolute;
+  inset: 0;
   padding: 28px;
   overflow: hidden;
   border-radius: 18px;
   background: rgba(10, 15, 38, 0.45);
+}
+.lens-demo {
+  position: relative;
+  min-height: 210px;
+  overflow: hidden;
+  border-radius: 18px;
+}
+.lens-demo-surface {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 28px;
+  overflow: hidden;
+  border-radius: 18px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.08) 0 1px,
+      transparent 1px 24px
+    ),
+    linear-gradient(135deg, rgba(27, 170, 151, 0.92), rgba(40, 52, 129, 0.94));
+}
+.lens-demo-surface span {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.lens-demo-surface strong {
+  font-size: 36px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.lens-demo-chart {
+  width: 78%;
+  height: 42px;
+  border-bottom: 3px solid rgba(156, 255, 224, 0.9);
+  border-radius: 50%;
+  transform: rotate(-6deg);
+}
+.lens-inline {
+  position: absolute;
+  right: 26px;
+  bottom: 26px;
+  display: grid;
+  width: 132px;
+  height: 78px;
+  place-items: center;
+  border: 0;
+  color: #fff;
+  font-weight: 600;
+  cursor: grab;
+  touch-action: none;
+}
+.lens-inline:active {
+  cursor: grabbing;
 }
 .bounded-surface p {
   position: relative;
@@ -337,8 +396,8 @@ a {
 .partial-surface {
   position: absolute;
   display: grid;
-  width: 62%;
-  height: 62%;
+  width: 66%;
+  height: 72%;
   place-items: center;
   border-radius: 18px;
   font-weight: 600;
@@ -399,6 +458,14 @@ a {
 .vanilla-sample {
   gap: 8px;
 }
+.vanilla-sample code {
+  max-width: 100%;
+  overflow: hidden;
+  color: rgba(165, 245, 218, 0.9);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .vanilla-sample small {
   color: rgba(255, 255, 255, 0.65);
 }
@@ -447,16 +514,13 @@ a {
 /* Compact, expandable runtime truth. It is fixed so automation can inspect it
    without turning every example into a developer-tools layout. */
 .diagnostics {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 80;
-  width: min(360px, calc(100vw - 36px));
+  width: 100%;
+  margin-top: 24px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 18px;
   background: rgba(7, 9, 19, 0.9);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.38);
+  box-shadow: none;
   backdrop-filter: blur(20px) saturate(1.2);
 }
 .diagnostics-toggle {
@@ -641,6 +705,10 @@ a {
   gap: 12px;
   padding: 14px 16px;
 }
+.lock-card {
+  outline: 1px solid rgba(255, 255, 255, 0.12);
+  outline-offset: -1px;
+}
 .notif-text {
   min-width: 0;
   flex: 1;
@@ -686,6 +754,8 @@ a {
 }
 .cc-tile {
   border-radius: 26px;
+  outline: 1px solid rgba(255, 255, 255, 0.12);
+  outline-offset: -1px;
 }
 .cc-body {
   padding: 18px 22px;
@@ -722,6 +792,17 @@ a {
   flex: 1;
   width: auto;
 }
+.cc-control {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.cc-control > span {
+  font-size: 13px;
+  font-weight: 550;
+  color: rgba(255, 255, 255, 0.72);
+}
 .cc-toggle {
   display: flex;
   justify-content: center;
@@ -736,15 +817,74 @@ a {
   align-items: stretch;
 }
 .specimen-stage {
+  position: relative;
   display: grid;
   place-items: center;
   min-height: 320px;
+  overflow: hidden;
+  border-radius: 28px;
+  outline: 1px solid rgba(255, 255, 255, 0.12);
+  outline-offset: -1px;
+}
+.specimen-source {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: space-between;
+  padding: 22px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  font-weight: 600;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07) 25%, transparent 25%) 0 0
+    / 32px 32px,
+    linear-gradient(315deg, rgba(255, 255, 255, 0.07) 25%, transparent 25%) 0 0
+    / 32px 32px,
+    radial-gradient(circle at 30% 25%, #3ee0c1, transparent 28%),
+    radial-gradient(circle at 76% 70%, #ff8a65, transparent 30%),
+    #172343;
+}
+.specimen-source > div {
+  width: 78%;
+  height: 74px;
+  border-top: 3px solid rgba(159, 249, 227, 0.9);
+  border-radius: 50%;
+  transform: rotate(-8deg);
 }
 .specimen {
   width: min(320px, 100%);
   height: 190px;
   display: grid;
   place-items: center;
+}
+
+/* Canvas/media public-API example. */
+.canvas-media-frame {
+  position: relative;
+  width: min(760px, 100%);
+  aspect-ratio: 19 / 9;
+  overflow: hidden;
+  border-radius: 28px;
+  background: #08243c;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.38);
+  outline: 1px solid rgba(255, 255, 255, 0.16);
+  outline-offset: -1px;
+}
+.canvas-media-source {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.canvas-media-control {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 0;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
 }
 .specimen-label {
   font-size: 17px;
@@ -829,10 +969,7 @@ a {
 
 /* ── Wallpaper switcher ──────────────────────────────────────────────────── */
 .switcher {
-  position: fixed;
-  left: 18px;
-  bottom: 18px;
-  z-index: 60;
+  width: fit-content;
   border-radius: 999px;
 }
 .switcher-row {
@@ -883,14 +1020,17 @@ a {
   .catalogue-copy p {
     font-size: 16px;
   }
-  .diagnostics {
-    bottom: 76px;
+  .hero-wallpapers {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .nav-links a:first-child {
     display: none;
   }
-  .hero-lens {
-    display: none;
+  .canvas-media-control {
+    right: 14px;
+    bottom: 14px;
+    min-height: 42px;
   }
 }
 

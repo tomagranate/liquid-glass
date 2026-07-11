@@ -22,6 +22,7 @@ import {
 } from "@heroicons/react/24/solid";
 import {
   Glass,
+  GlassMediaSurface,
   GlassRoot,
   GlassSurface,
   useGlass,
@@ -32,9 +33,7 @@ import { CodeBlock } from "./CodeBlock.jsx";
 import {
   GlassButton,
   GlassDock,
-  GlassLens,
   GlassPanel,
-  GlassShockwave,
   GlassSlider,
   GlassSwitch,
   GlassToggleGroup,
@@ -82,10 +81,10 @@ const HERO_CODE = [
 <Glass as="nav">{links}</Glass>
 
 // Register only the bounded DOM islands that need in-place refraction.
-<GlassSurface background className="bounded-card">
-  {liveContent}
-  <Glass radius="50%" />
-</GlassSurface>`,
+<div className="bounded-card">
+  <GlassSurface background>{liveContent}</GlassSurface>
+  <Glass background={false} radius="50%" />
+</div>`,
   },
   {
     label: "Vanilla",
@@ -113,7 +112,7 @@ function Slider({ value, onChange }) {
   const track = useRef(null);
   const thumb = useRef(null);
   useSurface(track);                          // the filled bar bends in place
-  const lens = useGlass(thumb, { radius: 999 });
+  const lens = useGlass(thumb, { radius: 999, background: false });
   useLayoutEffect(() => lens?.geometryChanged(), [value]);
   return (
     <div className="slider">
@@ -131,7 +130,7 @@ function Switch({ on, onChange }) {
   const track = useRef(null);
   const thumb = useRef(null);
   useSurface(track);                          // track color bends under the thumb
-  useGlass(thumb, { radius: 999 });           // CSS slide is tracked automatically
+  useGlass(thumb, { radius: 999, background: false });
   return (
     <div data-on={on} role="switch" onClick={() => onChange(!on)}>
       <span ref={track} className="track" />
@@ -149,7 +148,7 @@ const VIDEO_CODE = [
 // SVG filters can't sample video; the media surface uses a WebGL backend.
 <GlassMediaSurface live>
   <video src="/coast.mp4" muted loop playsInline />
-  <Glass as="button" radius="50%">{playIcon}</Glass>
+  <Glass as="button" radius="50%" background={false}>{playIcon}</Glass>
 </GlassMediaSurface>`,
   },
   {
@@ -158,32 +157,37 @@ const VIDEO_CODE = [
     code: `import { createMediaSurface, glass } from "@tomagranate/liquid-glass";
 
 createMediaSurface(videoEl, { live: true });
-glass(playButton, { radius: "50%", chroma: 0.7 });`,
+glass(playButton, { radius: "50%", chroma: 0.7, background: false });`,
   },
 ];
 
-const SHOCKWAVE_CODE = `// Low-level API: drive the WebGL2 displacement shader yourself — no surface
-// and no glass() call. The fragment shader bends the field texture along a
-// ring that expands from the tap point.
-const gl = canvas.getContext("webgl2");
-uploadTexture(gl, fieldCanvas);
+const CANVAS_CODE = `import {
+  Glass,
+  GlassMediaSurface,
+} from "@tomagranate/liquid-glass/react";
 
-function frame(now) {
-  gl.uniform1f(uRadius, ringRadius(now));
-  gl.uniform1f(uStrength, ringStrength(now));
-  gl.drawArrays(gl.TRIANGLES, 0, 6);
-  requestAnimationFrame(frame);
-}`;
+// Charts, maps, games, and editors can opt into the live texture backend.
+<GlassMediaSurface live>
+  <canvas ref={chartRef} />
+  <Glass as="button" background={false} radius={999}>
+    Inspect live data
+  </Glass>
+</GlassMediaSurface>`;
 
-const PLAYGROUND_CODE = `import { useGlass } from "@tomagranate/liquid-glass/react";
+const PLAYGROUND_CODE = `import { GlassSurface, useGlass } from "@tomagranate/liquid-glass/react";
 
 function Specimen({ material }) {
   const ref = useRef(null);
-  const handle = useGlass(ref, { radius: 32 });
+  const handle = useGlass(ref, { radius: 32, background: false });
   // Material tweaks are a cheap patch — no re-create, no filter rebuild.
   useEffect(() => handle?.update(material), [handle, material]);
   return <div ref={ref} className="specimen">Specimen</div>;
-}`;
+}
+
+<div className="stage">
+  <GlassSurface className="pattern" />
+  <Specimen material={material} />
+</div>`;
 
 const CATALOGUE_CASES = {
   wallpaper: "wallpaper-zero-config",
@@ -287,6 +291,8 @@ export default function App() {
     progress,
     setProgress,
     now,
+    wallpaper,
+    setWallpaper,
     tune,
     setTune,
   };
@@ -300,19 +306,10 @@ export default function App() {
       </div>
 
       {/* General chrome uses the zero-config backdrop/copy route. Content
-          surfaces appear only as bounded islands in the catalogue below. */}
+          surfaces appear only as bounded islands in the examples below. */}
       <div className="overlay-layer">
         <Nav />
-        <GlassLens
-          className="hero-lens"
-          size={200}
-          hint="Drag me"
-          data-demo-case="draggable-lens"
-          aria-label="Draggable glass lens"
-        />
-        <WallpaperSwitcher current={wallpaper} onSelect={setWallpaper} />
       </div>
-      <DiagnosticsPanel />
     </div>
   );
 }
@@ -320,7 +317,7 @@ export default function App() {
 function Scenes(p) {
   return (
     <>
-      <Hero />
+      <Hero wallpaper={p.wallpaper} setWallpaper={p.setWallpaper} />
       <DockScene />
       <LockScreenScene
         now={p.now}
@@ -331,8 +328,8 @@ function Scenes(p) {
       />
       <ControlCenterScene {...p} />
       <VideoScene />
-      <CatalogueScene />
-      <ShockwaveScene />
+      <PatternsScene />
+      <CanvasMediaScene />
       <PlaygroundScene tune={p.tune} setTune={p.setTune} />
       <Footer />
     </>
@@ -359,8 +356,8 @@ function Nav() {
       chroma={0.5}
       specular={0.35}
       rimLight={0.9}
-      tint="rgba(255,255,255,0.08)"
-      shadow="0 18px 50px rgba(0,0,0,0.35)"
+      tint="rgba(10,12,24,0.32)"
+      shadow="0 18px 50px rgba(0,0,0,0.28)"
     >
       <div className="nav-row">
         <a className="nav-brand" href="#top" aria-label="Liquid Glass — home">
@@ -402,7 +399,7 @@ function GitHubIcon(props) {
   );
 }
 
-function Hero() {
+function Hero({ wallpaper, setWallpaper }) {
   const [copied, setCopied] = useState(false);
 
   const copyInstall = () => {
@@ -454,6 +451,10 @@ function Hero() {
           <ClipboardIcon className="install-icon" />
         )}
       </button>
+      <div className="hero-wallpapers">
+        <span>Try another wallpaper</span>
+        <WallpaperSwitcher current={wallpaper} onSelect={setWallpaper} />
+      </div>
       <CodeBlock tabs={HERO_CODE} />
     </header>
   );
@@ -554,7 +555,11 @@ function LockScreenScene({ now, playing, setPlaying, progress, setProgress }) {
 
 function MusicWidget({ playing, setPlaying, progress, setProgress }) {
   return (
-    <GlassPanel className="lock-card" contentClassName="widget">
+    <GlassPanel
+      className="lock-card"
+      contentClassName="widget"
+      glass={{ tint: "rgba(8,12,24,0.38)", blur: 2.5 }}
+    >
       <div className="widget-top">
         <span className="widget-art" aria-hidden="true" />
         <div className="widget-meta">
@@ -562,7 +567,12 @@ function MusicWidget({ playing, setPlaying, progress, setProgress }) {
           <p className="widget-artist">Caustics</p>
         </div>
         <div className="widget-controls">
-          <button type="button" className="widget-btn" aria-label="Previous">
+          <button
+            type="button"
+            className="widget-btn"
+            aria-label="Back 10 percent"
+            onClick={() => setProgress(Math.max(0, progress - 10))}
+          >
             <BackwardIcon className="widget-icon" />
           </button>
           <button
@@ -577,7 +587,12 @@ function MusicWidget({ playing, setPlaying, progress, setProgress }) {
               <PlayIcon className="widget-icon lg" />
             )}
           </button>
-          <button type="button" className="widget-btn" aria-label="Next">
+          <button
+            type="button"
+            className="widget-btn"
+            aria-label="Forward 10 percent"
+            onClick={() => setProgress(Math.min(100, progress + 10))}
+          >
             <ForwardIcon className="widget-icon" />
           </button>
         </div>
@@ -594,7 +609,11 @@ function MusicWidget({ playing, setPlaying, progress, setProgress }) {
 
 function Notification({ gradient, Icon, app, time, title, body }) {
   return (
-    <GlassPanel className="lock-card" contentClassName="notif">
+    <GlassPanel
+      className="lock-card"
+      contentClassName="notif"
+      glass={{ tint: "rgba(8,12,24,0.44)", blur: 3, rimLight: 1.05 }}
+    >
       <span className="glassx-app-badge" style={{ background: gradient }}>
         <Icon aria-hidden="true" />
       </span>
@@ -622,12 +641,13 @@ function ControlCenterScene(p) {
   const tileGlass = APPEARANCE_GLASS[p.appearance];
   return (
     <section className="scene shell" data-demo-case="switch-slider-toggle">
-      <SceneHeader index="03" title="Controls with real lenses for thumbs.">
-        Each switch track is its own tiny surface; the thumb is a lens that
-        bends the track — colour transition and all — in place as it slides, and
-        the engine tracks the CSS motion automatically. The segmented control
-        mixes the tiles a lighter or darker glass, because tint and frost are
-        just material options.
+      <SceneHeader
+        index="03"
+        title="Controls that feel made from the material."
+      >
+        Switches, sliders, and selection pills are working controls, not a
+        painted mockup. Move them to see their small lenses track the surface
+        beneath without putting the whole page on an animation loop.
       </SceneHeader>
       <div className="stage">
         <div className="cc-grid">
@@ -661,30 +681,39 @@ function ControlCenterScene(p) {
             <p className="cc-title">Display and sound</p>
             <div className="cc-row">
               <SunIcon className="cc-icon" />
-              <GlassSlider
-                className="cc-slider"
-                value={p.bright}
-                onChange={p.setBright}
-                aria-label="Brightness"
-              />
+              <div className="cc-control">
+                <span>Brightness</span>
+                <GlassSlider
+                  className="cc-slider"
+                  value={p.bright}
+                  onChange={p.setBright}
+                  aria-label="Brightness"
+                />
+              </div>
             </div>
             <div className="cc-row">
               <SpeakerWaveIcon className="cc-icon" />
-              <GlassSlider
-                className="cc-slider"
-                value={p.volume}
-                onChange={p.setVolume}
-                aria-label="Volume"
-              />
+              <div className="cc-control">
+                <span>Volume</span>
+                <GlassSlider
+                  className="cc-slider"
+                  value={p.volume}
+                  onChange={p.setVolume}
+                  aria-label="Volume"
+                />
+              </div>
             </div>
             <div className="cc-row">
               <FireIcon className="cc-icon" />
-              <GlassSlider
-                className="cc-slider"
-                value={p.warmth}
-                onChange={p.setWarmth}
-                aria-label="Warmth"
-              />
+              <div className="cc-control">
+                <span>Warmth</span>
+                <GlassSlider
+                  className="cc-slider"
+                  value={p.warmth}
+                  onChange={p.setWarmth}
+                  aria-label="Warmth"
+                />
+              </div>
             </div>
           </GlassPanel>
         </div>
@@ -721,33 +750,49 @@ function VideoScene() {
   );
 }
 
-function CatalogueScene() {
+function PatternsScene() {
   return (
     <section className="scene shell" id="catalogue">
-      <SceneHeader index="05" title="The routing and performance catalogue.">
-        These specimens make the backend contract visible. Each one is a stable
-        automated-test target, and each expensive effect is bounded to the UI
-        element that earns it.
+      <SceneHeader index="05" title="Use glass where it adds meaning.">
+        Start with a card or movable lens, then scale up deliberately. The
+        library keeps each effect bounded and chooses a usable browser fallback
+        when full refraction would cost too much.
       </SceneHeader>
       <div className="catalogue-grid stage">
         <CatalogueCard
           demoCase={CATALOGUE_CASES.content}
-          title="Bounded live content"
-          description="A registered island bends its own live DOM under the lens."
+          title="A live content card"
+          description="Register one interactive island when the glass should bend changing DOM content."
         >
-          <GlassSurface background className="bounded-surface">
-            <div className="surface-stripes" aria-hidden="true" />
-            <p>Live content remains selectable and clickable.</p>
-            <Glass className="catalogue-lens" preset="thin">
-              Content SVG
+          <div className="bounded-demo">
+            <GlassSurface background className="bounded-surface">
+              <div className="surface-stripes" aria-hidden="true" />
+              <p>Live content remains selectable and clickable.</p>
+            </GlassSurface>
+            <Glass className="catalogue-lens" preset="thin" background={false}>
+              Live content
             </Glass>
-          </GlassSurface>
+          </div>
+        </CatalogueCard>
+
+        <CatalogueCard
+          title="A lens users can move"
+          description="Drag the lens across a detailed surface. Programmatic moves stay aligned through the public handle."
+        >
+          <div className="lens-demo">
+            <GlassSurface className="lens-demo-surface">
+              <span>Quarterly</span>
+              <strong>42.8%</strong>
+              <div className="lens-demo-chart" aria-hidden="true" />
+            </GlassSurface>
+            <MovableGlass />
+          </div>
         </CatalogueCard>
 
         <CatalogueCard
           demoCase={CATALOGUE_CASES.partial}
-          title="Partial overlap"
-          description="Two bounded sources meet one lens without double-bending the uncovered area."
+          title="Compose nearby surfaces"
+          description="One lens can cross adjacent cards without duplicating their UI or blocking interaction."
         >
           <div className="partial-stage">
             <GlassSurface className="partial-surface partial-a">
@@ -756,7 +801,7 @@ function CatalogueScene() {
             <GlassSurface className="partial-surface partial-b">
               Surface B
             </GlassSurface>
-            <Glass className="partial-lens" radius={28}>
+            <Glass className="partial-lens" radius={28} background={false}>
               A + B
             </Glass>
           </div>
@@ -764,8 +809,8 @@ function CatalogueScene() {
 
         <CatalogueCard
           demoCase={CATALOGUE_CASES.reduced}
-          title="Reduced quality"
-          description="Performance quality fixes DPR at one and removes costly chroma and specular passes."
+          title="A lighter material"
+          description="Use the performance profile for repeated controls while keeping the same component API."
         >
           <Glass className="quality-sample" quality="performance">
             quality=&quot;performance&quot;
@@ -774,8 +819,8 @@ function CatalogueScene() {
 
         <CatalogueCard
           demoCase={CATALOGUE_CASES.oversized}
-          title="Oversized policy fallback"
-          description="An intentionally large surface demonstrates the selected native, tint, or none fallback."
+          title="Graceful on large panes"
+          description="Large decorative glass stays legible when the browser selects native blur or tint instead of refraction."
           wide
         >
           <Glass
@@ -784,14 +829,16 @@ function CatalogueScene() {
             fallback="blur"
             background="linear-gradient(135deg, #31d8c6, #402d86 55%, #ff9a52)"
           >
-            <span>Resize the viewport to cross the engine budget.</span>
+            <span>
+              Always usable. Full refraction when the browser budget allows it.
+            </span>
           </Glass>
         </CatalogueCard>
 
         <CatalogueCard
           demoCase={CATALOGUE_CASES.density}
-          title="32-lens density"
-          description="The aggregate policy leans or falls back as a group, instead of letting one page collapse."
+          title="A dense component system"
+          description="Thirty-two small lenses share an adaptive quality policy, so one dashboard cannot collapse the page."
           wide
         >
           <div
@@ -815,6 +862,7 @@ function CatalogueScene() {
         <VanillaCase />
         <ScopeIsolationCase />
       </div>
+      <DiagnosticsPanel />
     </section>
   );
 }
@@ -838,6 +886,73 @@ function CatalogueCard({
       </div>
       <div className="catalogue-stage">{children}</div>
     </article>
+  );
+}
+
+function MovableGlass() {
+  const ref = useRef(null);
+  const handle = useGlass(ref, {
+    background: false,
+    quality: "balanced",
+    radius: 24,
+    depth: 12,
+    scale: 32,
+    chroma: 0,
+    tint: "rgba(5,12,25,.18)",
+  });
+  const position = useRef({ x: 0, y: 0 });
+  const drag = useRef(null);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      className="glassx lens-inline"
+      data-demo-case="draggable-lens"
+      aria-label="Draggable glass lens"
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = {
+          id: event.pointerId,
+          x: event.clientX - position.current.x,
+          y: event.clientY - position.current.y,
+        };
+      }}
+      onPointerMove={(event) => {
+        if (drag.current?.id !== event.pointerId) return;
+        position.current = {
+          x: event.clientX - drag.current.x,
+          y: event.clientY - drag.current.y,
+        };
+        event.currentTarget.style.transform = `translate(${position.current.x}px, ${position.current.y}px)`;
+        handle?.geometryChanged();
+      }}
+      onPointerUp={() => {
+        drag.current = null;
+      }}
+      onPointerCancel={() => {
+        drag.current = null;
+      }}
+      onKeyDown={(event) => {
+        const directions = {
+          ArrowLeft: [-8, 0],
+          ArrowRight: [8, 0],
+          ArrowUp: [0, -8],
+          ArrowDown: [0, 8],
+        };
+        const delta = directions[event.key];
+        if (!delta) return;
+        event.preventDefault();
+        position.current = {
+          x: position.current.x + delta[0],
+          y: position.current.y + delta[1],
+        };
+        event.currentTarget.style.transform = `translate(${position.current.x}px, ${position.current.y}px)`;
+        handle?.geometryChanged();
+      }}
+    >
+      Drag lens
+    </button>
   );
 }
 
@@ -870,6 +985,10 @@ function VanillaCase() {
       description="A private scope owns this lens and exposes its real counters without React internals."
     >
       <div ref={host} className="vanilla-sample">
+        <code>
+          import {`{ createGlassScope }`} from
+          &quot;@tomagranate/liquid-glass&quot;;
+        </code>
         <span>scope.glass(element)</span>
         <small>{diagnostics?.lenses ?? 0} active lens</small>
       </div>
@@ -882,7 +1001,7 @@ function ScopeIsolationCase() {
     <CatalogueCard
       demoCase={CATALOGUE_CASES.scopes}
       title="Nested root isolation"
-      description="Each root routes only to surfaces it owns, even when the specimens overlap."
+      description="Give a modal, microfrontend, or embedded tool its own owner so it never refracts a neighboring app."
     >
       <div className="scope-stage">
         <GlassRoot quality="balanced">
@@ -1008,7 +1127,7 @@ function DiagnosticsPanel() {
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <span>Diagnostics</span>
+        <span>How this browser rendered the examples</span>
         <strong>{snapshot.backends.join(" + ")}</strong>
       </button>
       {open && (
@@ -1055,20 +1174,125 @@ function DiagnosticsPanel() {
   );
 }
 
-function ShockwaveScene() {
+function CanvasMediaScene() {
   return (
     <section className="scene shell" data-demo-case="canvas-media">
-      <SceneHeader index="06" title="Shockwaves through the light field.">
-        The low-level API: a hand-written WebGL2 shader, no `glass()` call in
-        sight. Tap the field to send one slow, wide refracting pulse across the
-        source pixels — the wavefront bends the geometry, glints, and fades back
-        into register.
+      <SceneHeader index="06" title="Glass over a canvas, with the public API.">
+        Charts, maps, games, and editors paint pixels that SVG filters cannot
+        read. The media surface uploads that canvas only while a lens overlaps
+        it. Disabling general background sampling makes this control explicitly
+        refract the live canvas in every supported browser.
       </SceneHeader>
-      <div className="stage">
-        <GlassShockwave />
+      <div className="stage stage-center">
+        <CanvasChart />
       </div>
-      <CodeBlock code={SHOCKWAVE_CODE} lang="js" />
+      <CodeBlock code={CANVAS_CODE} lang="jsx" />
     </section>
+  );
+}
+
+function CanvasChart() {
+  const canvasRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+    let frame = 0;
+    let animation = 0;
+    let visible = true;
+    const draw = () => {
+      const width = canvas.width;
+      const height = canvas.height;
+      const gradient = context.createLinearGradient(0, 0, width, height);
+      gradient.addColorStop(0, "#08243c");
+      gradient.addColorStop(0.55, "#125f71");
+      gradient.addColorStop(1, "#421e62");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, width, height);
+      context.strokeStyle = "rgba(255,255,255,.12)";
+      context.lineWidth = 1;
+      for (let x = 0; x <= width; x += 40) {
+        context.beginPath();
+        context.moveTo(x, 0);
+        context.lineTo(x, height);
+        context.stroke();
+      }
+      for (let y = 0; y <= height; y += 40) {
+        context.beginPath();
+        context.moveTo(0, y);
+        context.lineTo(width, y);
+        context.stroke();
+      }
+      context.beginPath();
+      for (let x = 0; x <= width; x += 4) {
+        const y =
+          height * 0.58 -
+          Math.sin(x * 0.022 + frame * 0.025) * 34 -
+          Math.sin(x * 0.007) * 48;
+        if (x === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      context.strokeStyle = "#8ff7df";
+      context.lineWidth = 5;
+      context.shadowColor = "rgba(75,255,221,.5)";
+      context.shadowBlur = 16;
+      context.stroke();
+      context.shadowBlur = 0;
+      context.fillStyle = "rgba(255,255,255,.9)";
+      context.font = "600 15px InterVariable, sans-serif";
+      context.fillText("Live signal", 24, 34);
+      frame += 1;
+      animation = visible ? requestAnimationFrame(draw) : 0;
+    };
+    draw();
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (reducedMotion.matches) {
+      cancelAnimationFrame(animation);
+      return;
+    }
+    if (typeof IntersectionObserver === "undefined") {
+      return () => cancelAnimationFrame(animation);
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (!visible) {
+        cancelAnimationFrame(animation);
+        animation = 0;
+      } else if (!animation) {
+        draw();
+      }
+    });
+    observer.observe(canvas);
+    return () => {
+      visible = false;
+      cancelAnimationFrame(animation);
+      observer.disconnect();
+    };
+  }, []);
+
+  return (
+    <GlassMediaSurface live className="canvas-media-frame">
+      <canvas
+        ref={canvasRef}
+        className="canvas-media-source"
+        width="760"
+        height="360"
+        aria-label="Animated live signal chart"
+      />
+      <Glass
+        as="button"
+        type="button"
+        className="canvas-media-control"
+        background={false}
+        radius={999}
+        depth={18}
+        scale={56}
+        tint="rgba(5,12,25,.22)"
+      >
+        Inspect live data
+      </Glass>
+    </GlassMediaSurface>
   );
 }
 
@@ -1081,12 +1305,16 @@ function PlaygroundScene({ tune, setTune }) {
       data-demo-case="material-update"
     >
       <SceneHeader index="07" title="Mix your own material.">
-        Displacement, rim depth, chromatic aberration, frost, and rim light are
-        all parameters. Tune the specimen — each change is a `handle.update()`
-        patch, not a rebuild — then ship the numbers you like.
+        Tune a real component against a detailed test pattern. Each slider calls
+        `handle.update()` on the same lens, so material changes are immediate
+        and the component keeps its state, focus, and event handlers.
       </SceneHeader>
       <div className="stage playground">
         <div className="specimen-stage">
+          <GlassSurface className="specimen-source">
+            <span>Live surface</span>
+            <div aria-hidden="true" />
+          </GlassSurface>
           <Specimen tune={tune} />
         </div>
         <GlassPanel
@@ -1156,10 +1384,10 @@ function PlaygroundScene({ tune, setTune }) {
 /* A standalone glass specimen whose material is tuned via handle.update(). */
 function Specimen({ tune }) {
   const ref = useRef(null);
-  const handle = useGlass(ref, { radius: 32, ...tune });
+  const handle = useGlass(ref, { radius: 32, background: false, ...tune });
 
   useEffect(() => {
-    handle?.update({ radius: 32, ...tune });
+    handle?.update({ radius: 32, background: false, ...tune });
   }, [handle, tune]);
 
   return (

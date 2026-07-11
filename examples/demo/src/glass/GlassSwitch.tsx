@@ -39,7 +39,7 @@ export function GlassSwitch({
   const trackRef = useRef<HTMLSpanElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
   useSurface(trackRef);
-  useGlass(thumbRef, { ...THUMB_GLASS, ...glass });
+  useGlass(thumbRef, { ...THUMB_GLASS, background: false, ...glass });
 
   return (
     <div

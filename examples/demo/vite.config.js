@@ -26,6 +26,12 @@ export default defineConfig(({ command }) => ({
       ? {
           alias: [
             {
+              find: "@tomagranate/liquid-glass/styles.css",
+              replacement: fileURLToPath(
+                new URL("../../src/core/liquid-glass.css", import.meta.url),
+              ),
+            },
+            {
               find: "@tomagranate/liquid-glass/react",
               replacement: fileURLToPath(
                 new URL("../../src/react/index.tsx", import.meta.url),
