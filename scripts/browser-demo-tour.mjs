@@ -152,8 +152,9 @@ async function readSceneSnapshot() {
     const stage=root.querySelector('.stage');
     const apps=[...dock.querySelectorAll('.glassx-dock-app')];
     const rect=dock.getBoundingClientRect(), stageRect=stage.getBoundingClientRect();
-    const backend=(dock.dataset.lgBackend || '').split(',');
-    const bg=dock.querySelector('.lg-bg');
+    const slab=dock.querySelector('.glassx-dock-slab');
+    const backend=(slab?.dataset.lgBackend || '').split(',');
+    const bg=slab?.querySelector('.lg-bg');
     const bgStyle=bg ? getComputedStyle(bg) : null;
     return {
       apps: apps.length,
@@ -369,10 +370,54 @@ async function assertInteractions() {
   if (transformAfter === transformBefore || transformAfter === "none") {
     throw new Error("Dock app hover interaction produced no visible motion");
   }
+  const hoverGeometry = await driver.executeScript(
+    `const dock=arguments[0].getBoundingClientRect();
+     const app=arguments[1].getBoundingClientRect();
+     const x=app.left + app.width / 2;
+     const y=Math.max(app.top + 1, Math.min(dock.top - 1, app.bottom - 1));
+     const hit=document.elementFromPoint(x,y);
+     return {
+       protrusion: dock.top - app.top,
+       hitApp: Boolean(hit && (hit === arguments[1] || arguments[1].contains(hit))),
+       dockOverflow: getComputedStyle(arguments[0]).overflow,
+       dock: {top:dock.top,left:dock.left,width:dock.width,height:dock.height},
+       app: {top:app.top,left:app.left,width:app.width,height:app.height},
+     };`,
+    dock,
+    firstApp,
+  );
+  if (
+    hoverGeometry.protrusion < 6 ||
+    !hoverGeometry.hitApp ||
+    hoverGeometry.dockOverflow !== "visible"
+  ) {
+    throw new Error(
+      `Dock hover is clipped or blocked: ${JSON.stringify(hoverGeometry)}`,
+    );
+  }
+  const hoverAfter = await takeScreenshot("dock-hover.png");
+  const dpr = await driver.executeScript("return devicePixelRatio");
+  const hoverRoi = {
+    x: dockRoi.x,
+    y: Math.max(0, dockRoi.y - 30 * dpr),
+    width: dockRoi.width,
+    height: dockRoi.height + 30 * dpr,
+  };
+  const hoverProof = compareRoi(dockBefore, hoverAfter, hoverRoi);
+  await writeFile(
+    join(artifactRoot, "dock-hover-roi.json"),
+    JSON.stringify(hoverProof, null, 2),
+  );
+  if (!hoverProof.pass)
+    throw new Error(
+      `Dock hover produced no visible pixel change: ${JSON.stringify(hoverProof)}`,
+    );
   summary.interactions.push({
     label: "dock hover",
     before: transformBefore,
     after: transformAfter,
+    geometry: hoverGeometry,
+    visual: hoverProof,
   });
 
   const swatches = await driver.findElements(
@@ -460,6 +505,100 @@ async function assertInteractions() {
   );
   summary.interactions.push({ label: "appearance tab", selected: "Dark" });
 
+  const video = await driver.findElement(
+    By.css('[data-demo-case="video-media"] video'),
+  );
+  const bigPlay = await driver.findElement(
+    By.css('[data-demo-case="video-media"] .glassx-video-bigplay'),
+  );
+  await scrollTo(video);
+  const initialVideo = await driver.executeScript(
+    `const video=arguments[0], control=arguments[1];
+     const vr=video.getBoundingClientRect(), cr=control.getBoundingClientRect();
+     const style=getComputedStyle(control);
+     const color=style.backgroundColor.split(/[(), ]+/).map(Number).filter(Number.isFinite);
+     return {
+       paused: video.paused,
+       muted: video.muted,
+       poster: video.getAttribute('poster'),
+       readyState: video.readyState,
+       controlLabel: control.getAttribute('aria-label'),
+       controlHidden: control.dataset.hidden,
+       controlBackground: style.backgroundColor,
+       controlBackgroundAlpha: color.length > 3 ? color[3] : 1,
+       controlBackend: control.dataset.lgBackend,
+       controlOpacity: Number(style.opacity),
+       centerDeltaX: Math.abs((vr.left + vr.width / 2) - (cr.left + cr.width / 2)),
+       centerDeltaY: Math.abs((vr.top + vr.height / 2) - (cr.top + cr.height / 2)),
+     };`,
+    video,
+    bigPlay,
+  );
+  if (
+    !initialVideo.paused ||
+    initialVideo.controlLabel !== "Play" ||
+    !initialVideo.poster ||
+    initialVideo.controlBackgroundAlpha <= 0 ||
+    initialVideo.controlBackgroundAlpha >= 0.8 ||
+    !initialVideo.controlBackend ||
+    initialVideo.controlBackend === "none" ||
+    initialVideo.controlOpacity < 0.95 ||
+    initialVideo.centerDeltaX > 2 ||
+    initialVideo.centerDeltaY > 2
+  ) {
+    throw new Error(
+      `Invalid initial video state: ${JSON.stringify(initialVideo)}`,
+    );
+  }
+  const initialControlRoi = await visibleRoi(bigPlay);
+  const initialControlShot = await takeScreenshot("video-initial-control.png");
+  const initialControlVisual = analyzeVisualRoi(
+    initialControlShot,
+    initialControlRoi,
+  );
+  if (!initialControlVisual.pass || initialControlVisual.meanLuminance < 12) {
+    throw new Error(
+      `Initial video control is blank or black: ${JSON.stringify(initialControlVisual)}`,
+    );
+  }
+  await bigPlay.click();
+  await driver.wait(
+    async () =>
+      driver.executeScript(
+        "return !arguments[0].paused && !document.querySelector('[data-demo-case=\"video-media\"] .glassx-video-bigplay')",
+        video,
+      ),
+    4_000,
+    "video did not enter playing state",
+  );
+  const playingShot = await takeScreenshot("video-playing.png");
+  const initialControlProof = compareRoi(
+    initialControlShot,
+    playingShot,
+    initialControlRoi,
+  );
+  if (!initialControlProof.pass)
+    throw new Error(
+      `Initial video glass control has no visible rendered state: ${JSON.stringify(initialControlProof)}`,
+    );
+  await video.click();
+  await driver.wait(
+    async () =>
+      driver.executeScript(
+        "return arguments[0].paused && !document.querySelector('[data-demo-case=\"video-media\"] .glassx-video-bigplay')",
+        video,
+      ),
+    4_000,
+    "video did not return to paused state",
+  );
+  summary.interactions.push({
+    label: "video play states",
+    initial: initialVideo,
+    transitions: ["paused", "playing", "paused"],
+    initialControlVisual,
+    initialControlProof,
+  });
+
   const seek = await driver.findElement(
     By.css('[data-demo-case="video-media"] [role="slider"][aria-label="Seek"]'),
   );
@@ -511,38 +650,90 @@ async function assertInteractions() {
     async () => (await mute.getAttribute("aria-label")) !== muteBefore,
     2_000,
   );
+  const muteMiddle = await mute.getAttribute("aria-label");
+  const videoMutedMiddle = await driver.executeScript(
+    "return arguments[0].muted",
+    video,
+  );
+  await mute.click();
+  await driver.wait(
+    async () => (await mute.getAttribute("aria-label")) === muteBefore,
+    2_000,
+  );
+  const videoMutedAfter = await driver.executeScript(
+    "return arguments[0].muted",
+    video,
+  );
+  if (videoMutedMiddle || !videoMutedAfter)
+    throw new Error("Video mute control did not expose both muted states");
   summary.interactions.push({
-    label: "video mute",
+    label: "video mute states",
     before: muteBefore,
+    middle: muteMiddle,
     after: await mute.getAttribute("aria-label"),
   });
 
-  const codeTabs = await driver.findElements(
-    By.css('[data-demo-case="wallpaper-zero-config"] .cb-tab'),
-  );
-  if (codeTabs.length < 2)
-    throw new Error("Public React/Vanilla code tabs are missing");
-  await driver.executeScript("arguments[0].focus()", codeTabs[1]);
-  await codeTabs[1].sendKeys(Key.ENTER);
-  await driver.wait(
-    async () => (await codeTabs[1].getAttribute("aria-selected")) === "true",
-    2_000,
-  );
-  const vanillaCode = await driver.findElement(
-    By.css('[data-demo-case="wallpaper-zero-config"] .cb-code'),
-  );
-  if (!(await vanillaCode.getText()).includes('@tomagranate/liquid-glass"'))
-    throw new Error("Vanilla example does not use the public package root");
-  await codeTabs[0].click();
-  await driver.wait(
-    async () => (await codeTabs[0].getAttribute("aria-selected")) === "true",
-    2_000,
-  );
-  if (
-    !(await vanillaCode.getText()).includes("@tomagranate/liquid-glass/react")
-  )
-    throw new Error("React example does not use the public React entry point");
-  summary.interactions.push({ label: "public code tabs", variants: 2 });
+  const allExamples = await driver.findElements(By.css(".cb"));
+  const tabbedExamples = await driver.findElements(By.css(".cb:has(.cb-tabs)"));
+  if (allExamples.length < 7 || tabbedExamples.length !== allExamples.length)
+    throw new Error(
+      `Every public code example must expose React/Vanilla tabs; total=${allExamples.length} tabbed=${tabbedExamples.length}`,
+    );
+  const toggledExamples = [];
+  for (const [index, block] of tabbedExamples.entries()) {
+    await scrollTo(block);
+    const tabs = await block.findElements(By.css(".cb-tab"));
+    const labelledTabs = await Promise.all(
+      tabs.map(async (tab) => ({ tab, label: (await tab.getText()).trim() })),
+    );
+    const reactTab = labelledTabs.find((item) => item.label === "React")?.tab;
+    const vanillaTab = labelledTabs.find(
+      (item) => item.label === "Vanilla",
+    )?.tab;
+    if (!reactTab || !vanillaTab)
+      throw new Error(`Code example ${index + 1} lacks React/Vanilla tabs`);
+    await driver.executeScript("arguments[0].focus()", vanillaTab);
+    await vanillaTab.sendKeys(Key.ENTER);
+    await driver.wait(
+      async () => (await vanillaTab.getAttribute("aria-selected")) === "true",
+      2_000,
+    );
+    const code = await block.findElement(By.css(".cb-code"));
+    const vanillaText = await code.getText();
+    if (
+      !vanillaText.includes('@tomagranate/liquid-glass"') ||
+      vanillaText.includes("@tomagranate/liquid-glass/react") ||
+      vanillaText.includes("src/")
+    )
+      throw new Error(
+        `Vanilla example ${index + 1} is not a useful public-root snippet`,
+      );
+    const copy = await block.findElement(By.css(".cb-copy"));
+    await copy.click();
+    await driver.wait(
+      async () => (await copy.getText()).includes("Copied"),
+      2_000,
+      `Code example ${index + 1} copy interaction failed`,
+    );
+    await reactTab.click();
+    await driver.wait(
+      async () => (await reactTab.getAttribute("aria-selected")) === "true",
+      2_000,
+    );
+    const reactText = await code.getText();
+    if (
+      !reactText.includes("@tomagranate/liquid-glass/react") ||
+      reactText.includes("src/")
+    )
+      throw new Error(
+        `React example ${index + 1} is not a useful public React snippet`,
+      );
+    toggledExamples.push({ index: index + 1, variants: ["Vanilla", "React"] });
+  }
+  summary.interactions.push({
+    label: "public code tabs",
+    examples: toggledExamples,
+  });
 
   const lens = await driver.findElement(
     By.css('[data-demo-case="draggable-lens"]'),

@@ -140,6 +140,7 @@ export function analyzeVisualRoi(base64, roi) {
   const edgeMean = edgeDelta / Math.max(1, edges);
   return {
     pixels,
+    meanLuminance: mean,
     luminanceRange: max - min,
     variance,
     edgeMean,
