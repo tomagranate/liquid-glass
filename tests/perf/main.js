@@ -43,6 +43,7 @@ function expectedBackend(id) {
   const ua = navigator.userAgent;
   if (id === "idle-teardown") return ["backdrop", "background-copy", "none"];
   if (id.startsWith("background-copy")) {
+    if (countFrom(id) > 8) return ["native"];
     const denseWebKit =
       /AppleWebKit\//.test(ua) &&
       !/(?:Chrome|Chromium|Edg)\//.test(ua) &&

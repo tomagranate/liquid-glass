@@ -80,13 +80,13 @@ export const BACKDROP_AGGREGATE_THRESHOLDS = {
 const BACKDROP_EXIT_HYSTERESIS = 0.8;
 
 /**
- * Calibrated against real Safari 26.5: one balanced 240x176 copy costs about
- * 1.03M device-pixel passes and remains usable, while eight lean copies still
- * miss the gate at 24.5fps. Other engines retain their existing copy path.
+ * Calibrated in branded browsers. Safari 26.5 degrades above one balanced
+ * 240x176 copy; Chrome 149 sustains eight copies but collapses at 32. Firefox
+ * uses the same provisional dense-copy ceiling pending broader hardware data.
  */
 export const BACKGROUND_COPY_AGGREGATE_THRESHOLDS = {
-  chromium: Number.POSITIVE_INFINITY,
-  firefox: Number.POSITIVE_INFINITY,
+  chromium: 12_000_000,
+  firefox: 12_000_000,
   webkit: 1_500_000,
 } as const;
 
@@ -155,7 +155,7 @@ export function updateBackdropWorkload(
   });
 }
 
-/** Update one visible painted copy and coalesce a WebKit safety-tier change. */
+/** Update one visible painted copy and coalesce an engine safety-tier change. */
 export function updateBackgroundCopyWorkload(
   runtime: ScopeRuntime | undefined,
   key: object,

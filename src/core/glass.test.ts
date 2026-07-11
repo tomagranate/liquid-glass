@@ -785,14 +785,17 @@ describe("glass routing", () => {
     it("resumes an initially offscreen lens from IntersectionObserver and returns idle", () => {
       let intersectionCallback: IntersectionObserverCallback | null = null;
       const disconnect = vi.fn();
+      const unobserve = vi.fn();
+      let observerConstructions = 0;
       vi.stubGlobal(
         "IntersectionObserver",
         class {
           constructor(callback: IntersectionObserverCallback) {
+            observerConstructions++;
             intersectionCallback = callback;
           }
           observe() {}
-          unobserve() {}
+          unobserve = unobserve;
           disconnect = disconnect;
           takeRecords(): IntersectionObserverEntry[] {
             return [];
@@ -805,6 +808,7 @@ describe("glass routing", () => {
       const scope = createGlassScope();
       cleanups.push(() => scope.destroy());
       const lensEl = addEl();
+      const siblingEl = addEl();
       const box = setRect(lensEl, {
         left: 10,
         top: 2_000,
@@ -812,34 +816,78 @@ describe("glass routing", () => {
         height: 50,
       });
       scope.glass(lensEl);
+      setRect(siblingEl, { left: 140, top: 20, width: 100, height: 50 });
+      scope.glass(siblingEl);
+
+      expect(observerConstructions).toBe(1);
 
       expect(lensEl.dataset.lgBackend).toBe("none");
-      expect(scope.getDiagnostics().backdropWorkload.lenses).toBe(0);
+      expect(scope.getDiagnostics().backdropWorkload.lenses).toBe(1);
 
       box.top = 20;
       expect(intersectionCallback).not.toBeNull();
       const callback =
         intersectionCallback as unknown as IntersectionObserverCallback;
       callback(
-        [{ isIntersecting: true } as IntersectionObserverEntry],
+        [
+          {
+            target: lensEl,
+            isIntersecting: true,
+          } as unknown as IntersectionObserverEntry,
+        ],
         {} as IntersectionObserver,
       );
       expect(lensEl.dataset.lgBackend).toBe("backdrop");
-      expect(scope.getDiagnostics().backdropWorkload.lenses).toBe(1);
+      expect(scope.getDiagnostics().backdropWorkload.lenses).toBe(2);
 
       box.top = 2_000;
       callback(
-        [{ isIntersecting: false } as IntersectionObserverEntry],
+        [
+          {
+            target: lensEl,
+            isIntersecting: false,
+          } as unknown as IntersectionObserverEntry,
+        ],
         {} as IntersectionObserver,
       );
       expect(lensEl.dataset.lgBackend).toBe("none");
-      expect(scope.getDiagnostics().backdropWorkload.lenses).toBe(0);
+      expect(scope.getDiagnostics().backdropWorkload.lenses).toBe(1);
       const idle = scope.getDiagnostics().geometryRafCallbacks;
       flushRaf();
       flushRaf();
       expect(scope.getDiagnostics().geometryRafCallbacks).toBe(idle);
 
+      const duplicateEl = addEl();
+      const duplicateBox = setRect(duplicateEl, {
+        left: 20,
+        top: 2_000,
+        width: 80,
+        height: 40,
+      });
+      const duplicateA = scope.glass(duplicateEl);
+      const duplicateB = scope.glass(duplicateEl);
+      duplicateA.destroy();
+      expect(
+        unobserve.mock.calls.some(([target]) => target === duplicateEl),
+      ).toBe(false);
+      duplicateBox.top = 30;
+      callback(
+        [
+          {
+            target: duplicateEl,
+            isIntersecting: true,
+          } as unknown as IntersectionObserverEntry,
+        ],
+        {} as IntersectionObserver,
+      );
+      expect(duplicateB.backends).toContain("backdrop");
+      duplicateB.destroy();
+      expect(
+        unobserve.mock.calls.filter(([target]) => target === duplicateEl),
+      ).toHaveLength(1);
+
       scope.destroy();
+      expect(unobserve).toHaveBeenCalledTimes(3);
       expect(disconnect).toHaveBeenCalled();
     });
 

@@ -110,7 +110,7 @@ describe("aggregate backdrop workload", () => {
 });
 
 describe("aggregate background-copy workload", () => {
-  it("falls back only on WebKit and restores below the hysteresis boundary", async () => {
+  it("falls back on WebKit and restores below the hysteresis boundary", async () => {
     const runtime = fakeRuntime();
     const first = vi.fn();
     const second = vi.fn();
@@ -145,12 +145,52 @@ describe("aggregate background-copy workload", () => {
     expect(first).toHaveBeenCalledTimes(2);
   });
 
-  it("does not change Chrome or Firefox copy routing", () => {
-    expect(BACKGROUND_COPY_AGGREGATE_THRESHOLDS.chromium).toBe(
-      Number.POSITIVE_INFINITY,
+  it("keeps Chrome and Firefox dense-copy ceilings above eight calibrated lenses", () => {
+    expect(BACKGROUND_COPY_AGGREGATE_THRESHOLDS.chromium).toBe(12_000_000);
+    expect(BACKGROUND_COPY_AGGREGATE_THRESHOLDS.firefox).toBe(12_000_000);
+    expect(BACKGROUND_COPY_AGGREGATE_THRESHOLDS.chromium).toBeGreaterThan(
+      BACKGROUND_COPY_AGGREGATE_THRESHOLDS.webkit,
     );
-    expect(BACKGROUND_COPY_AGGREGATE_THRESHOLDS.firefox).toBe(
-      Number.POSITIVE_INFINITY,
-    );
+  });
+
+  it.each([
+    "chromium",
+    "firefox",
+  ] as const)("preserves eight %s copies, degrades a dense group, and restores with hysteresis", async (engine) => {
+    const runtime = fakeRuntime();
+    const keys = Array.from({ length: 12 }, () => ({}));
+    const refresh = vi.fn();
+    for (const key of keys.slice(0, 8)) {
+      updateBackgroundCopyWorkload(runtime, key, {
+        deviceArea: 343_440,
+        passMultiplier: 3,
+        engine,
+        refresh,
+      });
+    }
+    expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
+      lenses: 8,
+      tier: "full",
+    });
+    for (const key of keys.slice(8)) {
+      updateBackgroundCopyWorkload(runtime, key, {
+        deviceArea: 343_440,
+        passMultiplier: 3,
+        engine,
+        refresh,
+      });
+    }
+    expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
+      lenses: 12,
+      tier: "native",
+      reason: "aggregate-background-copy-device-pixel-pass-budget",
+    });
+    await Promise.resolve();
+    for (const key of keys.slice(8))
+      updateBackgroundCopyWorkload(runtime, key, null);
+    expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
+      lenses: 8,
+      tier: "full",
+    });
   });
 });

@@ -25,6 +25,8 @@ export interface BackgroundSubscriber {
   element: HTMLElement;
   /** Per-subscriber explicit background CSS; null → the page background. */
   override?: () => string | null;
+  /** Optional lifecycle signal; emitted only when viewport visibility flips. */
+  onVisibilityChange?: (visible: boolean) => void;
 }
 
 let explicitBackground: string | null = null;
@@ -218,6 +220,7 @@ export function subscribeBackground(sub: BackgroundSubscriber): () => void {
     const observer = new IntersectionObserver(
       ([entry]) => {
         const visible = entry?.isIntersecting ?? true;
+        if (visible !== state.visible) sub.onVisibilityChange?.(visible);
         state.visible = visible;
         if (visible) paint(sub, false);
       },

@@ -180,14 +180,14 @@ remains compositor-only. Offscreen, destroyed, painted-copy, content, and media
 lenses do not contribute. `GlassDiagnostics.backdropWorkload` makes the active
 tier and measured workload inspectable.
 
-Painted copies have a separate engine-aware aggregate budget because Safari's
-cost remains catastrophic even after reducing the SVG chain. WebKit charges
-each visible copy's expanded physical area multiplied by displacement and
-specular passes. Above the provisional 1,500,000 pixel-pass threshold the scope
-uses its native/tint fallback; copied refraction returns below 70%. This keeps a
-single calibrated copy at full fidelity while dense scrolling copies degrade
-before they collapse frame rate. Chrome and Firefox use an infinite aggregate
-copy threshold, preserving their existing routing. Tier transitions use the
+Painted copies have a separate engine-aware aggregate budget because dense
+copy cost remains catastrophic even after reducing the SVG chain. Every engine
+charges each visible copy's expanded physical area multiplied by displacement
+and specular passes. Above the provisional 1,500,000 pixel-pass threshold the scope
+uses its native/tint fallback on WebKit; copied refraction returns below 70%.
+Chromium and Firefox use a 12,000,000 threshold, preserving calibrated one- and
+eight-copy groups while routing 32-copy density to fallback before collapse.
+Tier transitions use the
 same coalesced-refresh discipline, and
 `GlassDiagnostics.backgroundCopyWorkload` reports the measured total and
 reason.

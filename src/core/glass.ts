@@ -132,6 +132,48 @@ type GlassMaterialOptions = typeof DEFAULTS;
 
 type AnySurface = ContentSurface | MediaSurface;
 
+type ViewportSubscriber = (visible: boolean) => void;
+const viewportSubscribers = new Map<Element, Set<ViewportSubscriber>>();
+let sharedViewportObserver: IntersectionObserver | null = null;
+
+/**
+ * One observer serves every lens, keeping visibility work in the engine's
+ * batched path and delivering only actual entry/exit transitions to each
+ * lens. Multiple handles on one element share one observation safely.
+ */
+function subscribeViewport(
+  element: Element,
+  subscriber: ViewportSubscriber,
+): (() => void) | null {
+  if (typeof IntersectionObserver === "undefined") return null;
+  let elementSubscribers = viewportSubscribers.get(element);
+  if (!elementSubscribers) {
+    elementSubscribers = new Set();
+    viewportSubscribers.set(element, elementSubscribers);
+  }
+  elementSubscribers.add(subscriber);
+  sharedViewportObserver ??= new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      for (const notify of viewportSubscribers.get(entry.target) ?? []) {
+        notify(entry.isIntersecting);
+      }
+    }
+  });
+  if (elementSubscribers.size === 1) sharedViewportObserver.observe(element);
+  return () => {
+    const current = viewportSubscribers.get(element);
+    current?.delete(subscriber);
+    if (current && !current.size) {
+      viewportSubscribers.delete(element);
+      sharedViewportObserver?.unobserve(element);
+    }
+    if (!viewportSubscribers.size) {
+      sharedViewportObserver?.disconnect();
+      sharedViewportObserver = null;
+    }
+  };
+}
+
 function resolveRadius(
   radius: GlassOptions["radius"],
   width: number,
@@ -315,16 +357,12 @@ export function glass(
   // event-driven wake-up when clipping/scrolling brings it into the viewport.
   // IntersectionObserver supplies that transition without a per-frame ticker
   // or an O(N) rect walk on every unrelated scroll.
-  const viewportObserver =
-    typeof IntersectionObserver === "undefined"
-      ? null
-      : new IntersectionObserver(([entry]) => {
-          if (destroyed || !entry) return;
-          if (entry.isIntersecting === viewportIntersecting) return;
-          viewportIntersecting = entry.isIntersecting;
-          sync(false);
-        });
-  viewportObserver?.observe(element);
+  const onViewportChange = (isIntersecting: boolean): void => {
+    if (destroyed || isIntersecting === viewportIntersecting) return;
+    viewportIntersecting = isIntersecting;
+    sync(false);
+  };
+  let unsubscribeViewport = subscribeViewport(element, onViewportChange);
 
   function observeSurface(el: Element): void {
     if (observedSurfaces.has(el)) return;
@@ -570,12 +608,23 @@ export function glass(
     );
     if (backgroundBackend) backends.add(backgroundBackend);
     publishBackends(backends);
+
+    // The painted-copy subsystem already observes its copy with a generous
+    // root margin so it can stop scroll painting offscreen. Reuse that signal
+    // instead of making Chromium track every moving copy twice. Other tiers
+    // retain the shared lens observer for suspension.
+    if (backgroundBackend === "background-copy") {
+      unsubscribeViewport?.();
+      unsubscribeViewport = null;
+    } else if (!unsubscribeViewport) {
+      unsubscribeViewport = subscribeViewport(element, onViewportChange);
+    }
   }
 
   function shouldSyncForScroll(target: GeometryTarget): boolean {
     // Observer-less environments retain correctness at the cost of checking
     // only their inactive lenses on a coalesced scroll frame.
-    if (inactive && !viewportObserver) return true;
+    if (inactive && !unsubscribeViewport) return true;
     if (!active.size) return false;
     const scroller = scrollElementOf(target);
     if (!scroller) return true;
@@ -988,6 +1037,7 @@ export function glass(
           typeof opts.background === "string"
             ? opts.background
             : (runtime?.background ?? null),
+        onVisibilityChange: onViewportChange,
       };
       bgUnsubscribe = subscribeBackground(bgSubscriber);
       bgPaintSig = paintSig;
@@ -1076,7 +1126,7 @@ export function glass(
       element.removeEventListener("transitionrun", onSubtreeMotion);
       element.removeEventListener("animationstart", onSubtreeMotion);
       ro?.disconnect();
-      viewportObserver?.disconnect();
+      unsubscribeViewport?.();
       for (const surface of active) surface.detachLens(key);
       active.clear();
       unsubscribeBg();
