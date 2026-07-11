@@ -71,9 +71,11 @@ body {
 }
 #interaction {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  left: 24px;
+  bottom: 64px;
   z-index: 10;
+  min-width: 96px;
+  min-height: 48px;
 }
 body[data-scenario^="background-copy"] .perf-lens {
   position: absolute;

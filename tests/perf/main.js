@@ -9,9 +9,11 @@ import "./style.css";
 const app = document.querySelector("#app");
 let current = null;
 let interactionResults = [];
+let interactionStarts = 0;
 
 function resetInteractions() {
   interactionResults = [];
+  interactionStarts = 0;
   return interactionResults.length;
 }
 const pageErrors = [];
@@ -165,6 +167,7 @@ async function mount({ scenario, effect }) {
   }
   state.stopCanvas = animateCanvas(canvas, state);
   document.querySelector("#interaction").addEventListener("click", async () => {
+    interactionStarts++;
     const click = performance.now();
     await twoFrames();
     interactionResults.push(performance.now() - click);
@@ -283,6 +286,9 @@ window.__liquidGlassPerf = {
   resetInteractions,
   get interactionResults() {
     return interactionResults;
+  },
+  get interactionStarts() {
+    return interactionStarts;
   },
   get pageErrors() {
     return [...pageErrors];

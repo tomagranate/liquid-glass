@@ -6,8 +6,16 @@ function fixture({ dispatch = true } = {}) {
   let count = 0;
   let clicks = 0;
   const driver = {
-    async executeScript() {
-      return count;
+    async executeScript(script) {
+      return script.includes("elementFromPoint")
+        ? {
+            resultCount: count,
+            startCount: dispatch ? count : 0,
+            centerTarget: "interaction",
+            hidden: false,
+            focused: true,
+          }
+        : count;
     },
     async wait(condition, _timeout, message) {
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -50,7 +58,7 @@ test("fails with element and sample diagnostics when native click does not dispa
   const state = fixture({ dispatch: false });
   await assert.rejects(
     clickAndWaitForInteraction(state.driver, state.element, 1, 10),
-    /displayed.*true.*enabled.*true.*rect.*width.*100.*resultCount.*0/,
+    /displayed.*true.*enabled.*true.*rect.*width.*100.*resultCount.*0.*centerTarget.*interaction/,
   );
   assert.equal(state.clicks, 1);
 });
