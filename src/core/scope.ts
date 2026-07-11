@@ -28,6 +28,7 @@ function runtimeOf(options: GlassScopeOptions = {}): ScopeRuntime {
       mapRegenerations: 0,
       geometryRafCallbacks: 0,
       mediaRafCallbacks: 0,
+      mediaUploads: 0,
       policy: [],
     },
     background: null,

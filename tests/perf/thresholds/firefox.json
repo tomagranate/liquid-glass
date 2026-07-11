@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "provisional": true,
+  "defaults": {
+    "minFramesQuick": 80,
+    "minFramesFull": 590,
+    "maxP95": 34,
+    "maxDropRatio": 0.05,
+    "maxP95Ratio": 1.35,
+    "interactionP95": 100,
+    "interactionWorst": 200,
+    "mountSecondPaint": 250,
+    "ownedNodeGrowth": 0
+  },
+  "scenarios": {
+    "backdrop-scroll-1": {},
+    "backdrop-scroll-8": {},
+    "backdrop-scroll-32": {},
+    "background-copy-scroll-1": {},
+    "background-copy-scroll-8": {},
+    "background-copy-scroll-32": {},
+    "content-small-motion": {},
+    "content-page-scroll": {},
+    "media-live-1": {},
+    "media-live-8": {},
+    "mixed": {},
+    "idle-teardown": {}
+  },
+  "demo": { "maxP95": 42, "maxDropRatio": 0.08, "maxP95Ratio": 1.5 }
+}

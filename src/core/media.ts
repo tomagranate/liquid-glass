@@ -244,6 +244,7 @@ export class MediaSurface implements SurfaceHandle {
   private ensureUpload(): void {
     if (!this.glassGL || this.uploaded || !sourceReady(this.media)) return;
     this.glassGL.setSource(this.media);
+    if (this.runtime) this.runtime.diagnostics.mediaUploads++;
     this.uploaded = true;
   }
 
@@ -262,6 +263,7 @@ export class MediaSurface implements SurfaceHandle {
         if (this.runtime) this.runtime.diagnostics.mediaRafCallbacks++;
         if (sourceReady(this.media)) {
           this.glassGL.setSource(this.media);
+          if (this.runtime) this.runtime.diagnostics.mediaUploads++;
           this.uploaded = true;
         }
         this.glassGL.render();

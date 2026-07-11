@@ -345,6 +345,8 @@ a WebGL shockwave), see the demo in [`examples/demo`](examples/demo).
 ```sh
 npm install
 npm run dev        # the showcase demo → http://localhost:5180
+npm run build:perf # production package-export benchmark fixture
+npm run perf:all   # branded Chrome, Firefox, Safari W3C performance gate
 npm run build      # build the package to dist/
 npm test           # vitest
 npm run lint       # biome

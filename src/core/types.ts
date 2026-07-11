@@ -165,6 +165,7 @@ export interface GlassDiagnostics {
   readonly mapRegenerations: number;
   readonly geometryRafCallbacks: number;
   readonly mediaRafCallbacks: number;
+  readonly mediaUploads: number;
   readonly policy: readonly {
     backend: GlassBackend;
     reason: string;

@@ -506,6 +506,7 @@ describe("browser: media surfaces (WebGL)", () => {
       );
       const running = scope.getDiagnostics().mediaRafCallbacks;
       expect(running).toBeGreaterThan(0);
+      expect(scope.getDiagnostics().mediaUploads).toBeGreaterThan(0);
 
       visibility = "hidden";
       document.dispatchEvent(new Event("visibilitychange"));

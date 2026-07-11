@@ -1,0 +1,85 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font: 14px system-ui;
+  background: #17203b;
+  color: white;
+}
+body {
+  background: linear-gradient(135deg, #ff7657, #6147cb 50%, #1bc6a7);
+}
+#app {
+  position: relative;
+  width: 1280px;
+  height: 900px;
+  overflow: hidden;
+}
+#surface {
+  position: absolute;
+  inset: -100px 0 0;
+  height: 1200px;
+  background: linear-gradient(
+    135deg,
+    rgba(20, 30, 80, 0.5),
+    rgba(255, 180, 70, 0.4)
+  );
+  padding: 120px 24px;
+  transition: transform 0.01s linear;
+}
+.wallpaper-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 10px;
+}
+.wallpaper-grid span {
+  height: 42px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+}
+#media {
+  position: absolute;
+  left: 300px;
+  top: 280px;
+  width: 640px;
+  height: 360px;
+}
+.perf-lens {
+  position: fixed;
+  width: 120px;
+  height: 72px;
+  border: 0;
+  border-radius: 24px;
+  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  z-index: 5;
+  transition: transform 0.08s linear;
+}
+#interaction {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10;
+}
+body[data-scenario^="content-small"] #surface {
+  inset: 250px auto auto 250px;
+  width: 600px;
+  height: 260px;
+  padding: 20px;
+}
+body[data-scenario^="content-page"] #surface {
+  inset: 0;
+  height: 900px;
+}
+body[data-scenario="idle-teardown"] #surface {
+  display: none;
+}
+body[data-scenario="mixed"] #surface {
+  width: 500px;
+}

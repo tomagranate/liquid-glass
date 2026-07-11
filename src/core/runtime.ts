@@ -11,6 +11,7 @@ export interface MutableDiagnostics {
   mapRegenerations: number;
   geometryRafCallbacks: number;
   mediaRafCallbacks: number;
+  mediaUploads: number;
   policy: Array<{
     backend: import("./types.js").GlassBackend;
     reason: string;
