@@ -782,6 +782,67 @@ describe("glass routing", () => {
       });
     });
 
+    it("resumes an initially offscreen lens from IntersectionObserver and returns idle", () => {
+      let intersectionCallback: IntersectionObserverCallback | null = null;
+      const disconnect = vi.fn();
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          constructor(callback: IntersectionObserverCallback) {
+            intersectionCallback = callback;
+          }
+          observe() {}
+          unobserve() {}
+          disconnect = disconnect;
+          takeRecords(): IntersectionObserverEntry[] {
+            return [];
+          }
+          root = null;
+          rootMargin = "0px";
+          thresholds = [0];
+        },
+      );
+      const scope = createGlassScope();
+      cleanups.push(() => scope.destroy());
+      const lensEl = addEl();
+      const box = setRect(lensEl, {
+        left: 10,
+        top: 2_000,
+        width: 100,
+        height: 50,
+      });
+      scope.glass(lensEl);
+
+      expect(lensEl.dataset.lgBackend).toBe("none");
+      expect(scope.getDiagnostics().backdropWorkload.lenses).toBe(0);
+
+      box.top = 20;
+      expect(intersectionCallback).not.toBeNull();
+      const callback =
+        intersectionCallback as unknown as IntersectionObserverCallback;
+      callback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+      expect(lensEl.dataset.lgBackend).toBe("backdrop");
+      expect(scope.getDiagnostics().backdropWorkload.lenses).toBe(1);
+
+      box.top = 2_000;
+      callback(
+        [{ isIntersecting: false } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+      expect(lensEl.dataset.lgBackend).toBe("none");
+      expect(scope.getDiagnostics().backdropWorkload.lenses).toBe(0);
+      const idle = scope.getDiagnostics().geometryRafCallbacks;
+      flushRaf();
+      flushRaf();
+      expect(scope.getDiagnostics().geometryRafCallbacks).toBe(idle);
+
+      scope.destroy();
+      expect(disconnect).toHaveBeenCalled();
+    });
+
     it("does no scroll work: a scrolled frame writes nothing on the bg", () => {
       const lensEl = addEl();
       setRect(lensEl, { left: 20, top: 30, width: 120, height: 50 });

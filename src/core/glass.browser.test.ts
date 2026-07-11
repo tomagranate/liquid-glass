@@ -298,6 +298,51 @@ describe("browser: content surfaces", () => {
   });
 });
 
+describe("browser: offscreen lens lifecycle", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    document.body.style.cssText = "";
+    setBackground(null);
+  });
+
+  it("resumes a lens scrolled into a clipped viewport and suspends it offscreen", async () => {
+    document.body.style.cssText = "margin:0;overflow:hidden;";
+    const scope = createGlassScope();
+    const scroller = document.createElement("div");
+    scroller.style.cssText =
+      "position:fixed;inset:0;width:320px;height:200px;overflow:auto;background:linear-gradient(135deg,#123,#789);";
+    const track = document.createElement("div");
+    track.style.cssText = "position:relative;height:1000px;";
+    const lens = document.createElement("button");
+    lens.textContent = "Below fold";
+    lens.style.cssText =
+      "position:absolute;left:20px;top:600px;width:140px;height:56px;";
+    track.appendChild(lens);
+    scroller.appendChild(track);
+    document.body.appendChild(scroller);
+    scope.glass(lens);
+
+    await vi.waitFor(() => {
+      expect(lens.dataset.lgBackend).toBe("none");
+    });
+    scroller.scrollTop = 540;
+    await vi.waitFor(() => {
+      expect(lens.dataset.lgBackend).not.toBe("none");
+    });
+
+    scroller.scrollTop = 0;
+    await vi.waitFor(() => {
+      expect(lens.dataset.lgBackend).toBe("none");
+    });
+    const idle = scope.getDiagnostics().geometryRafCallbacks;
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    expect(scope.getDiagnostics().geometryRafCallbacks).toBe(idle);
+    scope.destroy();
+  });
+});
+
 describe("browser: aggregate background-copy policy", () => {
   beforeEach(stubOutBackdropTier);
   afterEach(() => {

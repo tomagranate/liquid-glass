@@ -272,6 +272,8 @@ export function glass(
   let warnedFixedDocumentScroll = false;
   let currentBackends: readonly GlassBackend[] = [];
   let backendSignature = "";
+  let inactive = true;
+  let viewportIntersecting: boolean | null = null;
 
   function publishBackends(found: Set<GlassBackend>): void {
     if (!found.size) found.add("none");
@@ -306,6 +308,23 @@ export function glass(
       ? null
       : new ResizeObserver(() => sync(true));
   ro?.observe(element);
+
+  // Scroll routing intentionally skips standalone/backdrop lenses: once
+  // active, their compositor-backed geometry follows scrolling without JS.
+  // An offscreen lens has no active registration, though, so it needs one
+  // event-driven wake-up when clipping/scrolling brings it into the viewport.
+  // IntersectionObserver supplies that transition without a per-frame ticker
+  // or an O(N) rect walk on every unrelated scroll.
+  const viewportObserver =
+    typeof IntersectionObserver === "undefined"
+      ? null
+      : new IntersectionObserver(([entry]) => {
+          if (destroyed || !entry) return;
+          if (entry.isIntersecting === viewportIntersecting) return;
+          viewportIntersecting = entry.isIntersecting;
+          sync(false);
+        });
+  viewportObserver?.observe(element);
 
   function observeSurface(el: Element): void {
     if (observedSurfaces.has(el)) return;
@@ -440,7 +459,7 @@ export function glass(
       lensRect.bottom <= 0 ||
       lensRect.left >= window.innerWidth ||
       lensRect.top >= window.innerHeight;
-    const inactive = tooSmall || offscreen;
+    inactive = tooSmall || offscreen || viewportIntersecting === false;
     if (runtime && !inactive && backdropEligible()) {
       const desired = resolveMaterial(
         opts,
@@ -554,6 +573,9 @@ export function glass(
   }
 
   function shouldSyncForScroll(target: GeometryTarget): boolean {
+    // Observer-less environments retain correctness at the cost of checking
+    // only their inactive lenses on a coalesced scroll frame.
+    if (inactive && !viewportObserver) return true;
     if (!active.size) return false;
     const scroller = scrollElementOf(target);
     if (!scroller) return true;
@@ -1054,6 +1076,7 @@ export function glass(
       element.removeEventListener("transitionrun", onSubtreeMotion);
       element.removeEventListener("animationstart", onSubtreeMotion);
       ro?.disconnect();
+      viewportObserver?.disconnect();
       for (const surface of active) surface.detachLens(key);
       active.clear();
       unsubscribeBg();
