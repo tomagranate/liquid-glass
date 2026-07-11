@@ -1169,7 +1169,15 @@ function Specimen({ tune }) {
   );
 }
 
-function Range({ label, display, onChange, ...rest }) {
+function rangeName(label) {
+  return String(label)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function Range({ label, display, onChange, name = rangeName(label), ...rest }) {
   return (
     <label className="range">
       <span className="range-top">
@@ -1178,6 +1186,7 @@ function Range({ label, display, onChange, ...rest }) {
       </span>
       <input
         type="range"
+        name={name}
         {...rest}
         onChange={(e) => onChange(parseFloat(e.target.value))}
       />
