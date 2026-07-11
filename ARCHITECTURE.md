@@ -316,6 +316,10 @@ same-scope `opts.surfaces` list):
    budget monotonically and caps effective DPR/chroma/specular. WebKit retains
    its hard 2048 device-pixel dimension. Exceeded work enters the configured
    fallback tier with a diagnostic reason and effective values.
+   SVG allocation uses `(source + 2·filterReach) · dpr` in each dimension after
+   quality caps/adaptive chroma are resolved; the WebKit hard dimension uses
+   those expanded bounds. Backdrop carriers and WebGL use raw bounds because
+   they do not allocate that expanded SVG source region.
 
 CSS-only props (`backdrop`, `tint`, `rimLight`, `shadow`) are deliberately
 excluded from the map/filter rebuild signature, so a colour or opacity change

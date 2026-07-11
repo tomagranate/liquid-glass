@@ -75,13 +75,27 @@ export class MediaSurface implements SurfaceHandle {
   private readonly onContextLost = (event: Event): void => {
     event.preventDefault();
     this.active = false;
+    this.glassGL?.destroy();
+    this.glassGL = null;
     this.syncLoop();
     notifyGeometry("resize");
   };
   private readonly onContextRestored = (): void => {
-    this.active = Boolean(this.glassGL);
-    this.uploaded = false;
-    this.applyLenses();
+    if (this.destroyed) return;
+    try {
+      this.glassGL = new WebGLGlass(this.overlay);
+      this.active = true;
+      this.uploaded = false;
+      this.layout();
+      this.applyLenses();
+    } catch (error) {
+      this.glassGL = null;
+      this.active = false;
+      console.warn(
+        "liquid-glass: WebGL2 context restore failed — media surface remains on fallback.",
+        (error as Error).message,
+      );
+    }
     notifyGeometry("resize");
   };
   private readonly onSourceReady = (): void => {

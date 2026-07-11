@@ -334,11 +334,21 @@ describe("glass routing", () => {
     const foreign = second.createSurface(surfaceEl);
     const lensEl = addEl();
     setRect(lensEl, { left: 20, top: 20, width: 50, height: 50 });
-    first.glass(lensEl, { background: false, surfaces: [foreign] });
+    const handle = first.glass(lensEl, {
+      background: false,
+      surfaces: [foreign],
+    });
+    handle.geometryChanged();
+    handle.geometryChanged();
     expect(surfaceEl.style.filter).toBe("");
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("belongs to another scope"),
     );
+    expect(
+      warn.mock.calls.filter(([message]) =>
+        String(message).includes("belongs to another scope"),
+      ),
+    ).toHaveLength(1);
   });
 
   it("moves 32 scoped lenses without rebuilding filters or maps after warmup", () => {

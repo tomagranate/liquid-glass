@@ -259,6 +259,7 @@ export function glass(
   let active = new Set<AnySurface>();
   const observedSurfaces = new Set<Element>();
   const warnedExcluded = new Set<AnySurface>();
+  const warnedForeignSurfaces = new WeakSet<object>();
   let warnedFixedDocumentScroll = false;
   let currentBackends: readonly GlassBackend[] = [];
   let backendSignature = "";
@@ -349,15 +350,24 @@ export function glass(
   function candidateSurfaces(): { list: AnySurface[]; explicit: boolean } {
     const sel = opts.surfaces;
     if (Array.isArray(sel)) {
-      const list = sel.filter(
-        (s): s is AnySurface =>
-          (s instanceof ContentSurface || s instanceof MediaSurface) &&
-          (!runtime || s.runtime === runtime),
-      );
-      if (runtime && list.length !== sel.length) {
-        console.warn(
-          "liquid-glass: explicit surface belongs to another scope and was ignored.",
-        );
+      const list: AnySurface[] = [];
+      for (const surface of sel) {
+        if (
+          !(surface instanceof ContentSurface) &&
+          !(surface instanceof MediaSurface)
+        ) {
+          continue;
+        }
+        if (runtime && surface.runtime !== runtime) {
+          if (!warnedForeignSurfaces.has(surface)) {
+            warnedForeignSurfaces.add(surface);
+            console.warn(
+              "liquid-glass: explicit surface belongs to another scope and was ignored.",
+            );
+          }
+          continue;
+        }
+        list.push(surface);
       }
       return { list, explicit: true };
     }

@@ -5,6 +5,7 @@ import type {
   GlassQuality,
   ResolvedLensMaterial,
 } from "./types.js";
+import { filterReach } from "./filter.js";
 
 export type GlassEngine = "chromium" | "firefox" | "webkit";
 
@@ -34,6 +35,8 @@ export interface PolicyDecision {
   reason: string;
   provisionalBudget: number;
   deviceArea: number;
+  filterWidth: number;
+  filterHeight: number;
 }
 
 export function detectEngine(): GlassEngine {
@@ -63,7 +66,6 @@ export function chooseGlassPolicy(input: PolicyInput): PolicyDecision {
         : 1;
   const budget = base * multiplier;
   const dpr = Math.max(1, input.dpr || 1);
-  const deviceArea = input.width * input.height * dpr * dpr;
   const material = { ...input.material };
 
   if (input.quality === "performance") {
@@ -72,13 +74,35 @@ export function chooseGlassPolicy(input: PolicyInput): PolicyDecision {
     material.specular = 0;
   } else if (input.quality === "balanced") {
     material.dpr = Math.min(material.dpr, 1.5);
-    if (deviceArea > budget * 0.5) {
-      material.chroma = 0;
-      material.specular = 0;
-    }
   } else {
     material.dpr = Math.min(material.dpr, 2);
   }
+
+  // SVG content/copy filters allocate beyond their raw source bounds so
+  // displaced and blurred edge samples remain available. Chromium's backdrop
+  // carrier is intentionally clipped to the lens box, while WebGL has no SVG
+  // filter region, so those backends use their raw dimensions.
+  const expandsFilterRegion =
+    input.desiredBackend === "content-svg" ||
+    input.desiredBackend === "background-copy";
+  const preliminaryReach = expandsFilterRegion
+    ? filterReach(material.scale, material.blur, material.chroma)
+    : 0;
+  const preliminaryArea =
+    (input.width + 2 * preliminaryReach) *
+    dpr *
+    (input.height + 2 * preliminaryReach) *
+    dpr;
+  if (input.quality === "balanced" && preliminaryArea > budget * 0.5) {
+    material.chroma = 0;
+    material.specular = 0;
+  }
+  const reach = expandsFilterRegion
+    ? filterReach(material.scale, material.blur, material.chroma)
+    : 0;
+  const filterWidth = (input.width + 2 * reach) * dpr;
+  const filterHeight = (input.height + 2 * reach) * dpr;
+  const deviceArea = filterWidth * filterHeight;
 
   if (input.visible === false) {
     return {
@@ -87,11 +111,12 @@ export function chooseGlassPolicy(input: PolicyInput): PolicyDecision {
       reason: "offscreen",
       provisionalBudget: budget,
       deviceArea,
+      filterWidth,
+      filterHeight,
     };
   }
   const webkitHardDimension =
-    input.engine === "webkit" &&
-    (input.width * dpr > 2048 || input.height * dpr > 2048);
+    input.engine === "webkit" && (filterWidth > 2048 || filterHeight > 2048);
   const firefoxAnimatedRisk =
     input.engine === "firefox" && input.moving && deviceArea > budget * 0.5;
   if (webkitHardDimension || deviceArea > budget || firefoxAnimatedRisk) {
@@ -105,6 +130,8 @@ export function chooseGlassPolicy(input: PolicyInput): PolicyDecision {
           : "provisional-area-budget",
       provisionalBudget: budget,
       deviceArea,
+      filterWidth,
+      filterHeight,
     };
   }
   return {
@@ -113,5 +140,7 @@ export function chooseGlassPolicy(input: PolicyInput): PolicyDecision {
     reason: "within-provisional-budget",
     provisionalBudget: budget,
     deviceArea,
+    filterWidth,
+    filterHeight,
   };
 }

@@ -90,4 +90,49 @@ describe("glass runtime policy", () => {
     expect(webkit.backend).toBe("none");
     expect(webkit.reason).toBe("webkit-hard-dimension");
   });
+
+  it("degrades when filter reach pushes raw-under-budget content over area", () => {
+    const result = chooseGlassPolicy({
+      engine: "chromium",
+      desiredBackend: "content-svg",
+      quality: "balanced",
+      fallback: "blur",
+      material,
+      width: 1600,
+      height: 1600,
+      dpr: 1,
+    });
+    expect(1600 * 1600).toBeLessThan(result.provisionalBudget);
+    expect(result.deviceArea).toBeGreaterThan(result.provisionalBudget);
+    expect(result.filterWidth).toBeGreaterThan(1600);
+    expect(result.backend).toBe("native");
+  });
+
+  it("includes reach in WebKit's hard dimension without expanding backdrop carriers", () => {
+    const content = chooseGlassPolicy({
+      engine: "webkit",
+      desiredBackend: "content-svg",
+      quality: "fidelity",
+      fallback: "blur",
+      material: { ...material, quality: "fidelity" },
+      width: 1900,
+      height: 100,
+      dpr: 1,
+    });
+    expect(content.filterWidth).toBeGreaterThan(2048);
+    expect(content.reason).toBe("webkit-hard-dimension");
+
+    const backdrop = chooseGlassPolicy({
+      engine: "webkit",
+      desiredBackend: "backdrop",
+      quality: "fidelity",
+      fallback: "blur",
+      material: { ...material, quality: "fidelity" },
+      width: 1900,
+      height: 100,
+      dpr: 1,
+    });
+    expect(backdrop.filterWidth).toBe(1900);
+    expect(backdrop.backend).toBe("backdrop");
+  });
 });

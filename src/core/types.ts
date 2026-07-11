@@ -171,6 +171,9 @@ export interface GlassDiagnostics {
     dpr: number;
     chroma: number;
     specular: number;
+    filterWidth: number;
+    filterHeight: number;
+    deviceArea: number;
   }[];
 }
 

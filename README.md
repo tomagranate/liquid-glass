@@ -250,7 +250,10 @@ Area thresholds are deliberately **provisional calibration hooks**: 3,000,000
 Chromium, 750,000 Firefox, and 1,500,000 WebKit device pixels. `performance`
 uses 50%; `fidelity` uses 2× except for WebKit's hard 2048 device-pixel filter
 dimension. Override with `budgets`. Diagnostics report policy reasons,
-effective DPR/chroma/specular, and lifecycle/work counters.
+effective DPR/chroma/specular, expanded filter width/height/area, and
+lifecycle/work counters. SVG surface and background-copy costs include
+displacement, blur, and chroma reach beyond the raw source bounds; compositor
+backdrop and WebGL dimensions are not artificially expanded.
 
 ### `setBackground(bg: string | null)`
 

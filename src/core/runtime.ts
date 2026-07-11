@@ -17,6 +17,9 @@ export interface MutableDiagnostics {
     dpr: number;
     chroma: number;
     specular: number;
+    filterWidth: number;
+    filterHeight: number;
+    deviceArea: number;
   }>;
 }
 
@@ -48,6 +51,9 @@ export function recordPolicy(
     dpr: decision.effectiveMaterial.dpr,
     chroma: decision.effectiveMaterial.chroma,
     specular: decision.effectiveMaterial.specular,
+    filterWidth: decision.filterWidth,
+    filterHeight: decision.filterHeight,
+    deviceArea: decision.deviceArea,
   };
   const previous =
     runtime.diagnostics.policy[runtime.diagnostics.policy.length - 1];
@@ -57,7 +63,10 @@ export function recordPolicy(
     previous.reason === next.reason &&
     previous.dpr === next.dpr &&
     previous.chroma === next.chroma &&
-    previous.specular === next.specular
+    previous.specular === next.specular &&
+    previous.filterWidth === next.filterWidth &&
+    previous.filterHeight === next.filterHeight &&
+    previous.deviceArea === next.deviceArea
   ) {
     return;
   }
