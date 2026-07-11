@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
+import { spawn } from "node:child_process";
 import { By } from "selenium-webdriver";
 import { startStaticServer } from "./lib/static-server.mjs";
 import { createBrandedDriver, assertBrand } from "./lib/webdriver.mjs";
@@ -13,6 +14,7 @@ import {
 import { scenarioMotionMode } from "../tests/perf/motion-policy.js";
 import { verifyPerfBuild } from "./lib/perf-build.mjs";
 import { clickAndWaitForInteraction } from "./lib/interaction-wait.mjs";
+import { assertRenderPreflight } from "./lib/render-preflight.mjs";
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -62,6 +64,12 @@ let environment = {
   driver: "W3C WebDriver",
 };
 let driverLog = "";
+const displayGuard =
+  process.platform === "darwin"
+    ? spawn("/usr/bin/caffeinate", ["-d", "-i", "-w", String(process.pid)], {
+        stdio: "ignore",
+      })
+    : null;
 
 const executeAsync = (method, value) =>
   driver
@@ -107,6 +115,7 @@ try {
       driver.executeScript("return Boolean(window.__liquidGlassPerf?.ready)"),
     15_000,
   );
+  environment.renderPreflight = await assertRenderPreflight(driver, browser);
   environment.dpr = await driver.executeScript("return devicePixelRatio");
   environment.viewport = await driver.manage().window().getRect();
 
@@ -367,6 +376,7 @@ try {
   await writeFile(join(artifactRoot, "console-driver.log"), driverLog);
   await driver?.quit().catch(() => {});
   service?.child?.kill();
+  displayGuard?.kill();
   await server?.close();
 }
 
