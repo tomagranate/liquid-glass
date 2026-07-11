@@ -97,4 +97,34 @@ describe("generateDisplacementMap", () => {
     expect(Math.abs(byteAt(half, 20, 20, 0) - 128)).toBeLessThanOrEqual(1);
     expect(Math.abs(byteAt(half, 20, 20, 1) - 128)).toBeLessThanOrEqual(1);
   });
+
+  it("reverses rounded-pill rim and corner sampling with negative amplitude", () => {
+    const outward = captureMap({
+      width: 120,
+      height: 60,
+      radius: 30,
+      depth: 18,
+      dpr: 1,
+      amplitude: 1,
+    });
+    const inward = captureMap({
+      width: 120,
+      height: 60,
+      radius: 30,
+      depth: 18,
+      dpr: 1,
+      amplitude: -1,
+    });
+
+    // Straight left rim: outward samples beyond the host; inward samples the
+    // available centre pixels instead.
+    expect(byteAt(outward, 2, 30, 0)).toBeLessThan(128);
+    expect(byteAt(inward, 2, 30, 0)).toBeGreaterThan(128);
+
+    // Rounded top-left corner reverses both axes toward the pill centre.
+    expect(byteAt(outward, 12, 12, 0)).toBeLessThan(128);
+    expect(byteAt(outward, 12, 12, 1)).toBeLessThan(128);
+    expect(byteAt(inward, 12, 12, 0)).toBeGreaterThan(128);
+    expect(byteAt(inward, 12, 12, 1)).toBeGreaterThan(128);
+  });
 });

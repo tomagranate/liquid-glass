@@ -916,6 +916,10 @@ export function glass(
             dpr: material.dpr,
             specular: material.specular,
             specularAngle: material.specularAngle,
+            // Chromium's backdrop input contains only the host border box.
+            // Inward refraction keeps rounded rims sampling real pixels;
+            // outward maps create transparent corner wedges on pills.
+            amplitude: -1,
           });
           if (runtime) runtime.diagnostics.mapRegenerations++;
           bgMapSig = mapSig;

@@ -60,8 +60,9 @@ export interface DisplacementMapOptions {
    */
   maskAlpha?: boolean;
   /**
-   * Displacement amplitude multiplier applied to dx/dy before the 128 offset
-   * (clamped). Lets several lenses of different strengths share one filter
+   * Signed displacement amplitude multiplier applied to dx/dy before the 128
+   * offset (clamped). A negative value reverses the sampling direction. Lets
+   * several lenses of different strengths share one filter
    * chain: the chain runs at the strongest lens's scale and each weaker lens
    * bakes `ownScale / chainScale` into its map. Default 1.
    */

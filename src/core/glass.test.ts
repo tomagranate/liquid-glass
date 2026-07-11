@@ -750,6 +750,10 @@ describe("glass routing", () => {
 
       const filterId = extractFilterId(bg?.style.backdropFilter ?? "");
       expect(document.getElementById(filterId ?? "")?.localName).toBe("filter");
+      const backdropMapCall = [...vi.mocked(generateDisplacementMap).mock.calls]
+        .reverse()
+        .find(([options]) => options.width === 120 && options.height === 50);
+      expect(backdropMapCall?.[0].amplitude).toBe(-1);
       warn.mockRestore();
     });
 

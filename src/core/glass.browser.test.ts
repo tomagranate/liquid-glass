@@ -789,6 +789,52 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
   });
 
   it.skipIf(!supportsBackdropUrlFilter())(
+    "keeps rounded-pill backdrop sampling inside Chrome source corners",
+    async () => {
+      document.body.style.cssText =
+        "margin:0;overflow:hidden;background:linear-gradient(135deg,#f64,#35f);";
+      const pill = document.createElement("div");
+      pill.style.cssText =
+        "position:fixed;left:20px;top:20px;width:120px;height:60px;";
+      document.body.appendChild(pill);
+      const handle = glass(pill, {
+        radius: 30,
+        depth: 18,
+        scale: 40,
+        blur: 0,
+        chroma: 0,
+      });
+      const bg = pill.querySelector<HTMLElement>(":scope > .lg-bg");
+      const filterId = extractFilterId(bg?.style.backdropFilter ?? "");
+      const filter = document.getElementById(filterId ?? "");
+      expect(filter?.getAttribute("x")).toBe("0");
+      expect(filter?.getAttribute("y")).toBe("0");
+      expect(filter?.getAttribute("width")).toBe("120");
+      expect(filter?.getAttribute("height")).toBe("60");
+
+      const href = filter?.querySelector("feImage")?.getAttribute("href");
+      expect(href).toContain("data:image/png");
+      const image = new Image();
+      image.src = href ?? "";
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = 120;
+      canvas.height = 60;
+      const context = canvas.getContext("2d");
+      expect(context).toBeTruthy();
+      if (!context) throw new Error("no 2D context");
+      context.drawImage(image, 0, 0, 120, 60);
+      const at = (x: number, y: number, channel: number): number =>
+        context.getImageData(x, y, 1, 1).data[channel];
+
+      expect(at(2, 30, 0)).toBeGreaterThan(128);
+      expect(at(12, 12, 0)).toBeGreaterThan(128);
+      expect(at(12, 12, 1)).toBeGreaterThan(128);
+      handle.destroy();
+    },
+  );
+
+  it.skipIf(!supportsBackdropUrlFilter())(
     "routes explicit content when background:false without mocked detection",
     () => {
       const surfaceEl = document.createElement("main");
