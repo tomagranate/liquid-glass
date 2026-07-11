@@ -25,3 +25,22 @@ logs, screenshots, and ROI proofs under `artifacts/performance/<browser>`, even
 on failure. Threshold JSON is versioned and provisional. Baselines never update
 silently: `npm run perf:update-baselines -- --approve=true --browser=... --summary=...`
 only records provenance; numeric threshold edits remain explicit review changes.
+
+## Scroll fidelity and current 32-lens finding
+
+Scroll scenarios use the production architecture: a fixed/bounded filtered
+surface wraps an actual overflow scroller and fixed backdrop lenses live outside
+it. Background-copy lenses live in the scrolling content where their viewport
+relationship genuinely changes. The fixture records scroll distance and manual
+geometry notifications; every scroll scenario hard-fails unless distance is
+positive and `manualGeometryChanged` is exactly zero. Only scenarios that
+actually move lens boxes in JavaScript call `geometryChanged()`.
+
+An earlier transform-based fixture result was rejected because it injected 32
+manual geometry syncs per frame only into the effect case. After correction, a
+three-repetition branded Chrome run still showed a healthy 120fps control but a
+32-backdrop median near 99fps with a 0.202 calibrated drop ratio. The gate stays
+red. A future production change should consider aggregate scope policy—total
+active backdrop lens count/area could monotonically reduce map DPR/chroma or
+select a documented fallback—then be evaluated here. That adaptation is a
+proposal, not part of this harness revision.

@@ -10,6 +10,7 @@ import {
   percentile,
   summarize,
 } from "./lib/perf-analysis.mjs";
+import { scenarioMotionMode } from "../tests/perf/motion-policy.js";
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -150,6 +151,22 @@ try {
     }
     if (scenario !== "idle-teardown" && effectProofRun.motion < 1)
       throw new Error(`${scenario}: motion proof failed`);
+    const motionMode = scenarioMotionMode(scenario);
+    if (
+      motionMode === "scroll" &&
+      (effectProofRun.scrollDistance <= 0 ||
+        effectProofRun.manualGeometryChanged !== 0)
+    ) {
+      throw new Error(
+        `${scenario}: scroll architecture invariant failed (distance=${effectProofRun.scrollDistance}, manualGeometryChanged=${effectProofRun.manualGeometryChanged})`,
+      );
+    }
+    if (
+      motionMode === "moving-lens" &&
+      effectProofRun.manualGeometryChanged <= 0
+    ) {
+      throw new Error(`${scenario}: moving lens did not notify geometry`);
+    }
     if (
       scenario === "idle-teardown" &&
       (effectProofRun.diagnostics?.geometryRafCallbacks !== 0 ||
@@ -228,6 +245,9 @@ try {
           metrics,
           deltas: raw.deltas,
           diagnostics: raw.diagnostics,
+          motion: raw.motion,
+          scrollDistance: raw.scrollDistance,
+          manualGeometryChanged: raw.manualGeometryChanged,
           mountReady: raw.mountReady,
           mountSecondPaint: raw.mountSecondPaint,
           dpr: await driver.executeScript("return devicePixelRatio"),

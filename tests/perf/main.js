@@ -1,5 +1,9 @@
 import { createGlassScope } from "@tomagranate/liquid-glass";
 import "@tomagranate/liquid-glass/styles.css";
+import {
+  scenarioMotionMode,
+  shouldNotifyManualGeometry,
+} from "./motion-policy.js";
 import "./style.css";
 
 const app = document.querySelector("#app");
@@ -40,7 +44,7 @@ function expectedBackend(id) {
     return ["content-svg", "media-webgl", "background-copy", "native"];
   if (id.startsWith("backdrop") && /(?:Chrome|Chromium)\//.test(ua))
     return ["backdrop"];
-  return ["content-svg", "background-copy"];
+  return ["content-svg", "background-copy", "native"];
 }
 
 function markup(id, count) {
@@ -52,10 +56,12 @@ function markup(id, count) {
   const baseY = id.startsWith("content-small")
     ? 280
     : id === "mixed"
-      ? 210
+      ? 300
       : id.startsWith("media-live")
-        ? 210
-        : 40;
+        ? 300
+        : id.startsWith("background-copy")
+          ? 300
+          : 40;
   const controlNames = ["switch", "slider", "toggle"];
   const lenses = Array.from(
     { length: count },
@@ -66,7 +72,8 @@ function markup(id, count) {
     id.startsWith("media-live") || id === "mixed"
       ? `<canvas id="media" width="640" height="360"></canvas>`
       : "";
-  return `<main id="surface"><div class="wallpaper-grid">${Array.from({ length: 120 }, (_, i) => `<span>live-${i}</span>`).join("")}</div>${media}</main><div id="lenses">${lenses}</div><button id="interaction">interact</button>`;
+  const lensesInsideScroller = id.startsWith("background-copy");
+  return `<main id="surface"><div id="scroller"><div class="scroll-content"><div class="wallpaper-grid">${Array.from({ length: 160 }, (_, i) => `<span>live-${i}</span>`).join("")}</div>${media}${lensesInsideScroller ? `<div id="lenses">${lenses}</div>` : ""}</div></div></main>${lensesInsideScroller ? "" : `<div id="lenses">${lenses}</div>`}<button id="interaction">interact</button>`;
 }
 
 function animateCanvas(canvas, state) {
@@ -106,6 +113,8 @@ async function mount({ scenario, effect }) {
     lensHandles: [],
     running: true,
     motion: 0,
+    scrollDistance: 0,
+    manualGeometryChanged: 0,
     baselineOwned: document.querySelectorAll(".lg,.lgs-surface,.lgm-overlay")
       .length,
   };
@@ -170,17 +179,25 @@ async function teardown() {
 
 function driveMotion(frame) {
   if (!current) return;
-  if (current.scenario === "idle-teardown") return;
-  const surface = document.querySelector("#surface");
-  if (current.scenario.includes("scroll") || current.scenario === "mixed") {
-    surface.style.transform = `translateY(${-((frame * 2) % 180)}px)`;
-    for (const handle of current.lensHandles) handle.geometryChanged();
-  } else {
+  const mode = scenarioMotionMode(current.scenario);
+  if (mode === "idle") return;
+  if (mode === "scroll") {
+    const scroller = document.querySelector("#scroller");
+    const next = Math.abs(((frame * 4) % 240) - 120);
+    scroller.scrollTop = next;
+    current.scrollDistance = Math.max(
+      current.scrollDistance,
+      Math.abs(scroller.scrollTop),
+    );
+  } else if (shouldNotifyManualGeometry(current.scenario)) {
     for (const [index, lens] of [
       ...document.querySelectorAll(".perf-lens"),
     ].entries()) {
       lens.style.transform = `translate(${Math.sin((frame + index) / 9) * 18}px,${Math.cos((frame + index) / 11) * 8}px)`;
-      current.lensHandles[index]?.geometryChanged();
+      if (current.lensHandles[index]) {
+        current.lensHandles[index].geometryChanged();
+        current.manualGeometryChanged++;
+      }
     }
   }
   current.motion++;
@@ -232,6 +249,8 @@ function snapshot() {
     backends: [...new Set(backends)],
     expectedBackends: expectedBackend(current?.scenario || ""),
     motion: current?.motion ?? 0,
+    scrollDistance: current?.scrollDistance ?? 0,
+    manualGeometryChanged: current?.manualGeometryChanged ?? 0,
     mountReady: current?.mountReady ?? 0,
     mountSecondPaint: current?.mountSecondPaint ?? 0,
     diagnostics: current?.scope?.getDiagnostics() ?? null,
