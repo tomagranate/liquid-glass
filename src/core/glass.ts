@@ -424,6 +424,22 @@ export function glass(
     if (
       desiredBackend === "background-copy" &&
       decision.backend === "background-copy" &&
+      runtime?.diagnostics.backgroundCopyWorkload.tier === "lean"
+    ) {
+      decision = {
+        ...decision,
+        effectiveMaterial: {
+          ...decision.effectiveMaterial,
+          dpr: 1,
+          chroma: 0,
+          specular: 0,
+        },
+        reason: runtime.diagnostics.backgroundCopyWorkload.reason,
+      };
+    }
+    if (
+      desiredBackend === "background-copy" &&
+      decision.backend === "background-copy" &&
       runtime?.diagnostics.backgroundCopyWorkload.tier === "native"
     ) {
       decision = {

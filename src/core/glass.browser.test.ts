@@ -351,7 +351,7 @@ describe("browser: aggregate background-copy policy", () => {
     document.body.style.cssText = "";
   });
 
-  it("keeps one full copy but routes dense WebKit copies to native and restores", async () => {
+  it("adapts aggregate copy work by engine and preserves refractive output", async () => {
     document.body.style.cssText =
       "margin:0;overflow:hidden;background:linear-gradient(135deg,#f64,#35f);";
     const scope = createGlassScope({ quality: "balanced", fallback: "blur" });
@@ -414,7 +414,28 @@ describe("browser: aggregate background-copy policy", () => {
       expect(
         handles.every((handle) => handle.backends[0] === "background-copy"),
       ).toBe(true);
-      expect(scope.getDiagnostics().backgroundCopyWorkload.tier).toBe("full");
+      const isFirefox = /\bFirefox\//.test(navigator.userAgent);
+      if (isFirefox) {
+        // Playwright Firefox runs at DPR 1, so sixteen fixture copies cross
+        // the same physical pixel-pass boundary that eight copies cross in
+        // the branded DPR 1.5 performance lane.
+        for (let index = 4; index < 16; index++) addLens();
+        await vi.waitFor(() => {
+          expect(scope.getDiagnostics().backgroundCopyWorkload).toMatchObject({
+            lenses: 16,
+            tier: "lean",
+            reason: "aggregate-background-copy-lean-device-pixel-pass-budget",
+          });
+          expect(
+            elements.every((element) => displacementPasses(element) === 1),
+          ).toBe(true);
+        });
+      } else {
+        expect(scope.getDiagnostics().backgroundCopyWorkload.tier).toBe("full");
+        expect(
+          elements.every((element) => displacementPasses(element) === 3),
+        ).toBe(true);
+      }
     }
 
     scope.destroy();

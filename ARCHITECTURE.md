@@ -203,6 +203,9 @@ and specular passes. Above the provisional 1,500,000 pixel-pass threshold the sc
 uses its native/tint fallback on WebKit; copied refraction returns below 70%.
 Chromium and Firefox use a 12,000,000 threshold, preserving calibrated one- and
 eight-copy groups while routing 32-copy density to fallback before collapse.
+Firefox additionally enters a DPR-1, single-pass, no-specular lean tier above
+6,000,000 pixel-passes; this preserves copied refraction for eight lenses at
+120 Hz rather than prematurely replacing them with native blur.
 Tier transitions use the
 same coalesced-refresh discipline, and
 `GlassDiagnostics.backgroundCopyWorkload` reports the measured total and
@@ -370,10 +373,10 @@ same-scope `opts.surfaces` list):
    those expanded bounds. Backdrop carriers and WebGL use raw bounds because
    they do not allocate that expanded SVG source region.
    Painted copies also have scope-wide physical pixel-pass caps with 70% exit
-   hysteresis: 1,500,000 on WebKit and 12,000,000 on Chromium/Firefox. Exceeding
-   the engine's cap reports
-   `aggregate-background-copy-device-pixel-pass-budget` and selects the
-   configured fallback.
+   hysteresis: WebKit selects fallback above 1,500,000; Chromium above
+   12,000,000; Firefox selects a lean copy chain above 6,000,000 and fallback
+   above 12,000,000. Lean and fallback transitions report distinct aggregate
+   background-copy policy reasons.
 
 CSS-only props (`backdrop`, `tint`, `rimLight`, `shadow`) are deliberately
 excluded from the map/filter rebuild signature, so a colour or opacity change

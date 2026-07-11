@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BACKDROP_AGGREGATE_THRESHOLDS,
   BACKGROUND_COPY_AGGREGATE_THRESHOLDS,
+  BACKGROUND_COPY_LEAN_THRESHOLDS,
   type ScopeRuntime,
   updateBackdropWorkload,
   updateBackgroundCopyWorkload,
@@ -151,12 +152,14 @@ describe("aggregate background-copy workload", () => {
     expect(BACKGROUND_COPY_AGGREGATE_THRESHOLDS.chromium).toBeGreaterThan(
       BACKGROUND_COPY_AGGREGATE_THRESHOLDS.webkit,
     );
+    expect(BACKGROUND_COPY_LEAN_THRESHOLDS).toEqual({
+      chromium: 12_000_000,
+      firefox: 6_000_000,
+      webkit: 1_500_000,
+    });
   });
 
-  it.each([
-    "chromium",
-    "firefox",
-  ] as const)("preserves eight %s copies, degrades a dense group, and restores with hysteresis", async (engine) => {
+  it("leans eight Firefox copies, falls back when dense, and restores with hysteresis", async () => {
     const runtime = fakeRuntime();
     const keys = Array.from({ length: 12 }, () => ({}));
     const refresh = vi.fn();
@@ -164,19 +167,20 @@ describe("aggregate background-copy workload", () => {
       updateBackgroundCopyWorkload(runtime, key, {
         deviceArea: 343_440,
         passMultiplier: 3,
-        engine,
+        engine: "firefox",
         refresh,
       });
     }
     expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
       lenses: 8,
-      tier: "full",
+      tier: "lean",
+      reason: "aggregate-background-copy-lean-device-pixel-pass-budget",
     });
     for (const key of keys.slice(8)) {
       updateBackgroundCopyWorkload(runtime, key, {
         deviceArea: 343_440,
         passMultiplier: 3,
-        engine,
+        engine: "firefox",
         refresh,
       });
     }
@@ -190,7 +194,44 @@ describe("aggregate background-copy workload", () => {
       updateBackgroundCopyWorkload(runtime, key, null);
     expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
       lenses: 8,
-      tier: "full",
+      tier: "lean",
     });
+    for (const key of keys.slice(4, 8))
+      updateBackgroundCopyWorkload(runtime, key, null);
+    expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
+      lenses: 4,
+      tier: "full",
+      reason: "within-aggregate-background-copy-budget",
+    });
+  });
+
+  it("preserves eight full Chrome copies and routes a dense group to native", () => {
+    const runtime = fakeRuntime();
+    for (let index = 0; index < 8; index++) {
+      updateBackgroundCopyWorkload(
+        runtime,
+        {},
+        {
+          deviceArea: 343_440,
+          passMultiplier: 3,
+          engine: "chromium",
+          refresh: vi.fn(),
+        },
+      );
+    }
+    expect(runtime.diagnostics.backgroundCopyWorkload.tier).toBe("full");
+    for (let index = 8; index < 12; index++) {
+      updateBackgroundCopyWorkload(
+        runtime,
+        {},
+        {
+          deviceArea: 343_440,
+          passMultiplier: 3,
+          engine: "chromium",
+          refresh: vi.fn(),
+        },
+      );
+    }
+    expect(runtime.diagnostics.backgroundCopyWorkload.tier).toBe("native");
   });
 });

@@ -321,11 +321,15 @@ balanced 240×176 copy
 24.5fps even after reducing them to DPR 1 and one pass. WebKit scopes therefore
 enter the configured native/tint fallback above 1,500,000 pixel-passes and
 restore copied refraction below 70% of that threshold. Branded Chrome 149
-testing sustained eight copies but collapsed at 32, so Chromium and Firefox
-use a provisional 12,000,000 pixel-pass ceiling: normal groups retain copied
-refraction while dense groups degrade before frame rate collapses.
+testing sustained eight full-quality copies but collapsed at 32, so Chromium
+uses a provisional 12,000,000 pixel-pass fallback ceiling. At 120 Hz, branded
+Firefox keeps eight copies smooth only with a reduced DPR-1, single-pass chain;
+it enters that lean tier above 6,000,000 pixel-passes and native/tint fallback
+above 12,000,000. Both thresholds restore with 70% hysteresis so normal groups
+retain copied refraction without boundary churn.
 `getDiagnostics().backgroundCopyWorkload` exposes the
-count, aggregate cost, tier, and the public
+count, aggregate cost, `full` / `lean` / `native` tier, and the public
+`aggregate-background-copy-lean-device-pixel-pass-budget` or
 `aggregate-background-copy-device-pixel-pass-budget` reason. Transitions are
 microtask-coalesced; offscreen and destroyed lenses do not contribute.
 

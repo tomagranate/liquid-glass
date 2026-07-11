@@ -21,7 +21,7 @@ export interface MutableDiagnostics {
   backgroundCopyWorkload: {
     lenses: number;
     devicePixelPassArea: number;
-    tier: "full" | "native";
+    tier: "full" | "lean" | "native";
     reason: string;
   };
   policy: Array<{
@@ -88,6 +88,13 @@ export const BACKGROUND_COPY_AGGREGATE_THRESHOLDS = {
   chromium: 12_000_000,
   firefox: 12_000_000,
   webkit: 1_500_000,
+} as const;
+
+/** Entry point for the reduced-cost copy tier; equal to native means skipped. */
+export const BACKGROUND_COPY_LEAN_THRESHOLDS = {
+  chromium: BACKGROUND_COPY_AGGREGATE_THRESHOLDS.chromium,
+  firefox: 6_000_000,
+  webkit: BACKGROUND_COPY_AGGREGATE_THRESHOLDS.webkit,
 } as const;
 
 const BACKGROUND_COPY_EXIT_HYSTERESIS = 0.7;
@@ -181,16 +188,32 @@ export function updateBackgroundCopyWorkload(
     workload?.engine ??
     runtime.backgroundCopyWorkloads.values().next().value?.engine ??
     "chromium";
-  const threshold = BACKGROUND_COPY_AGGREGATE_THRESHOLDS[engine];
+  const nativeThreshold = BACKGROUND_COPY_AGGREGATE_THRESHOLDS[engine];
+  const leanThreshold = BACKGROUND_COPY_LEAN_THRESHOLDS[engine];
   const previous = runtime.diagnostics.backgroundCopyWorkload.tier;
-  const next =
-    previous === "native"
-      ? total < threshold * BACKGROUND_COPY_EXIT_HYSTERESIS
-        ? "full"
-        : "native"
-      : total > threshold
+  let next: "full" | "lean" | "native";
+  if (previous === "native") {
+    next =
+      total >= nativeThreshold * BACKGROUND_COPY_EXIT_HYSTERESIS
         ? "native"
-        : "full";
+        : total > leanThreshold
+          ? "lean"
+          : "full";
+  } else if (previous === "lean") {
+    next =
+      total > nativeThreshold
+        ? "native"
+        : total < leanThreshold * BACKGROUND_COPY_EXIT_HYSTERESIS
+          ? "full"
+          : "lean";
+  } else {
+    next =
+      total > nativeThreshold
+        ? "native"
+        : total > leanThreshold
+          ? "lean"
+          : "full";
+  }
   runtime.diagnostics.backgroundCopyWorkload = {
     lenses: runtime.backgroundCopyWorkloads.size,
     devicePixelPassArea: total,
@@ -198,7 +221,9 @@ export function updateBackgroundCopyWorkload(
     reason:
       next === "native"
         ? "aggregate-background-copy-device-pixel-pass-budget"
-        : "within-aggregate-background-copy-budget",
+        : next === "lean"
+          ? "aggregate-background-copy-lean-device-pixel-pass-budget"
+          : "within-aggregate-background-copy-budget",
   };
   if (next === previous || runtime.backgroundCopyRefreshQueued) return;
   runtime.backgroundCopyRefreshQueued = true;
