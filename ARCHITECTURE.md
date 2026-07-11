@@ -57,6 +57,22 @@ A lens over N surfaces holds N registrations at once, and a lens over no surface
 still refracts the background copy. Page stacking order composes an in-place
 content bend, a WebGL media overlay, and a lens's background copy for free.
 
+The supported topology is a positioned wrapper containing the pixel source and
+the lens as overlapping **siblings**:
+
+```html
+<div class="glass-stage">
+  <div class="registered-surface">Live source</div>
+  <button class="glass-lens">Crisp control</button>
+</div>
+```
+
+The surface must not contain the lens, and the lens must not contain the
+surface. A filter applied to an ancestor would also bend the lens and its crisp,
+interactive children. When an example explicitly demonstrates content SVG or
+media WebGL routing, its lens also sets `background: false`; otherwise
+Chromium's higher-priority compositor backdrop tier intentionally wins.
+
 ### The panel DOM contract
 
 `glass()` (and `<Glass>` from the framework-isolated `/react` entry) build this structure on the host element. React
@@ -225,11 +241,11 @@ these as the shape of the win, not a guaranteed single number.
 ### Caveats
 
 - **Backdrop-root leniency.** Per spec a filtered element is its own backdrop
-  root, so a lens nested inside a filtered surface "should" sample that surface,
-  not the page. Chromium is currently more lenient and still samples the page
-  wallpaper — which is what we want, and what the tier relies on. A browser
-  regression test in `glass.browser.test.ts` guards against Chromium tightening
-  this.
+  root. Chromium currently lets an auto-backdrop lens sample the page wallpaper
+  through that boundary, and a browser regression guards the behavior. This is
+  a backdrop-tier compatibility detail, not permission to nest a lens inside a
+  registered surface: descendant pairs remain excluded from content/media
+  routing and public examples use sibling layers.
 - **Safari and Firefox are unchanged.** They keep the copy architecture and its
   one-frame scroll lag; this tier is a Chromium bonus, not a portable fix. A
   possible future mitigation there is a `background-attachment: fixed` carrier
@@ -353,8 +369,9 @@ same-scope `opts.surfaces` list):
    quality caps/adaptive chroma are resolved; the WebKit hard dimension uses
    those expanded bounds. Backdrop carriers and WebGL use raw bounds because
    they do not allocate that expanded SVG source region.
-   WebKit additionally applies a scope-wide 1,500,000 physical pixel-pass cap
-   to painted copies, with 70% exit hysteresis. Exceeding it reports
+   Painted copies also have scope-wide physical pixel-pass caps with 70% exit
+   hysteresis: 1,500,000 on WebKit and 12,000,000 on Chromium/Firefox. Exceeding
+   the engine's cap reports
    `aggregate-background-copy-device-pixel-pass-budget` and selects the
    configured fallback.
 
@@ -389,8 +406,9 @@ inactive media surface as non-covering) — and it warns once.
 
 ### Which backend feeds a lens?
 
-- **Background copy** (default, no surface) — a bent CSS copy of the page
-  background. Cross-browser, cheap, for standalone panels over the wallpaper.
+- **Standalone background** (default, no surface) — Chromium samples the live
+  backdrop in the compositor; Safari and Firefox use a bent CSS copy of the
+  page background. This is the route for standalone panels over wallpaper.
 - **Content filter-on-DOM** (`createSurface`) — one shared SVG filter on live
   page content: cross-browser, keeps content interactive and in place, O(1)
   filter per surface.

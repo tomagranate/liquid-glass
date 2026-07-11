@@ -9,8 +9,9 @@ and sheen. The framework-independent core also includes a WebGL backend for
 
 One call per glass panel — **`glass(el)`** (or **`<Glass>`** in React) — works
 with **zero configuration** over any page, and gets *better* when the page
-registers surfaces: lenses then refract live scrolling content and playing video
-in place, not just the wallpaper.
+registers surfaces: lenses that select surface routing (`background: false`)
+then refract live scrolling content and playing video in place, not just the
+wallpaper.
 
 ```sh
 npm install @tomagranate/liquid-glass
@@ -44,7 +45,10 @@ Two nouns, and a router that connects them:
     bent copy of it.
 
 A lens over no surface still works: it refracts the page background. Register
-surfaces only for the parts you want to bend live.
+surfaces only for the parts you want to bend live. Put a surface and its lens
+in the same positioned wrapper as **overlapping siblings**. Do not nest either
+one inside the other: filtering an ancestor would also bend the lens's own
+children, which must remain crisp and interactive.
 
 ## Quick start
 
@@ -90,17 +94,42 @@ use the zero-config route shown above and let the runtime select its backend.
 import { glass, createSurface } from "@tomagranate/liquid-glass";
 
 createSurface(document.querySelector(".live-card"));
-glass(document.querySelector(".card-lens"), { radius: 24, blur: 2 });
+glass(document.querySelector(".card-lens"), {
+  radius: 24,
+  blur: 2,
+  background: false,
+});
 ```
+
+```html
+<div class="glass-stage">
+  <div class="live-card">Live, selectable content</div>
+  <button class="card-lens">Open</button>
+</div>
+```
+
+`.glass-stage` is positioned; `.live-card` and `.card-lens` are overlapping
+sibling layers. `background: false` explicitly selects registered-surface
+routing on Chromium instead of its higher-priority compositor backdrop tier.
 
 ```tsx
 import { Glass, GlassSurface } from "@tomagranate/liquid-glass/react";
 
 <>
-  <GlassSurface background className="live-card">
-    {liveCardContent}
-    <Glass className="card-lens" radius={24} blur={2} />
-  </GlassSurface>
+  <div className="glass-stage">
+    <GlassSurface background className="live-card">
+      {liveCardContent}
+    </GlassSurface>
+    <Glass
+      as="button"
+      className="card-lens"
+      radius={24}
+      blur={2}
+      background={false}
+    >
+      Open
+    </Glass>
+  </div>
 </>;
 ```
 
@@ -116,18 +145,31 @@ surface**; lenses over it are drawn by a WebGL shader fed the same displacement.
 import { glass, createMediaSurface } from "@tomagranate/liquid-glass";
 
 createMediaSurface(document.querySelector("video"), { live: true });
-glass(document.querySelector(".play"), { radius: "50%", chroma: 0.7 });
+glass(document.querySelector(".play"), {
+  radius: "50%",
+  chroma: 0.7,
+  background: false,
+});
+```
+
+```html
+<div class="video-stage">
+  <video src="/coast.mp4" muted loop playsinline></video>
+  <button class="play" aria-label="Play"></button>
+</div>
 ```
 
 ```tsx
 import { Glass, GlassMediaSurface } from "@tomagranate/liquid-glass/react";
 
-<GlassMediaSurface live>
-  <video src="/coast.mp4" muted loop playsInline />
-  <Glass as="button" radius="50%">
+<div className="video-stage">
+  <GlassMediaSurface live className="video-source">
+    <video src="/coast.mp4" muted loop playsInline />
+  </GlassMediaSurface>
+  <Glass as="button" className="play" radius="50%" background={false}>
     {playIcon}
   </Glass>
-</GlassMediaSurface>;
+</div>;
 ```
 
 `live` re-uploads the video every frame while a lens overlaps it (and only
@@ -144,8 +186,8 @@ in `useLayoutEffect`).
 | --- | --- |
 | `<GlassRoot quality="balanced">` | Own an isolated registry, background, and policy. Nested roots isolate; portals retain their nearest React scope. |
 | `<Glass as="div" {...material}>` | A lens. Material/option props are peeled off; every other prop spreads onto the host. `as` picks the tag (`"nav"`, `"button"`, …). |
-| `<GlassSurface background>` | Register the subtree as a content surface. |
-| `<GlassMediaSurface live>` | Register the first `<video>`/`<canvas>`/`<img>` descendant as a media surface. |
+| `<GlassSurface background>` | Register the host subtree as a content surface. Place lenses as overlapping siblings, not descendants. |
+| `<GlassMediaSurface live>` | Register the first `<video>`/`<canvas>`/`<img>` descendant as a media surface. Place lenses beside the wrapper. |
 | `useGlass(ref, opts)` | Attach a lens to an existing element; returns the live `GlassHandle` (null before mount). |
 | `useGlassDiagnostics(interval?)` | Read real counters and policy decisions for the nearest root (500 ms status cadence; `0` for one shot). |
 | `useSurface(ref, opts)` | Register an existing element as a content surface. |
@@ -162,7 +204,7 @@ function Switch({ on, onChange }) {
   const track = useRef(null);
   const thumb = useRef(null);
   useSurface(track); // track colour bends under the thumb
-  useGlass(thumb, { radius: 999 }); // the CSS slide is tracked automatically
+  useGlass(thumb, { radius: 999, background: false }); // force track-surface routing on Chromium
   return (
     <div data-on={on} role="switch" onClick={() => onChange(!on)}>
       <span ref={track} className="track" />
@@ -209,9 +251,9 @@ optional.
 | `quality` | `"balanced"` | `"performance"` caps DPR at 1 and disables chroma/specular; `"balanced"` caps DPR at 1.5 and adapts costly passes; `"fidelity"` permits DPR 2 within budget. |
 | `fallback` | `"blur"` | Unsupported/over-budget appearance: native `"blur"`, tint-only `"tint"`, or `"none"`. |
 | `onBackendChange` | — | Called only when the stable ordered backend set changes. |
-| `surfaces` | `"auto"` | Refract every geometrically overlapping surface in the current scope, or an explicit same-scope `SurfaceHandle[]`. |
+| `surfaces` | `"auto"` | Refract every geometrically overlapping surface in the current scope, or an explicit same-scope `SurfaceHandle[]`. On Chromium, set `background: false` to bypass the higher-priority auto-backdrop tier. |
 | `track` | `"auto"` | `"auto"` = event/observer-driven, auto-riding a shared rAF only while a CSS animation runs in the subtree; `"live"` = re-read geometry every frame (JS-animated lenses). |
-| `background` | `"auto"` | The bent background copy behind uncovered lens area. `"auto"` paints it unless a surface fully covers the lens; `false` never paints; a CSS string uses that instead of the page background. |
+| `background` | `"auto"` | The bent background copy behind uncovered lens area. `"auto"` selects Chromium's compositor backdrop tier when available; `false` disables the copy/backdrop and allows explicit content/media routing; a CSS string uses that background instead. |
 
 **`GlassHandle`** exposes `readonly backends`, a stable ordered array containing
 `"backdrop"`, `"background-copy"`, `"content-svg"`, `"media-webgl"`,
@@ -230,11 +272,17 @@ optional.
 Register a live DOM subtree as a content surface. `options.background` (`boolean
 | string`) paints the page background behind the surface's content in a `.lgs-bg`
 layer — `true` uses the auto-detected page background, a string is explicit CSS.
+The lens must be an overlapping sibling of the surface. A lens nested inside
+the surface, or containing it, is deliberately excluded so the surface filter
+cannot bend the lens's own crisp content.
 
 ### `createMediaSurface(media, options?) → SurfaceHandle`
 
 Register a `<video>`/`<canvas>`/`<img>`. `options.live` (`boolean`) re-uploads
-the source every frame while a lens overlaps it.
+the source every frame while a lens overlaps it. Keep the glass control as a
+sibling overlay; nesting it in the media wrapper is excluded for the same
+crisp-content reason. Set the lens's `background: false` when the example must
+select the media backend on Chromium.
 
 `SurfaceHandle` = `{ readonly element, refresh(), destroy() }`.
 
@@ -310,7 +358,9 @@ The library absorbs the things a refraction effect normally pushes onto you:
   attribute writes — O(1) per surface — with no map regen or filter rebuild.
 - **Descendant exclusion.** A lens that contains a surface (or vice versa) never
   registers against it — filtering would bend the lens's own crisp children — so
-  it refracts the background copy instead.
+  it refracts the background copy instead. Use a positioned parent with the
+  surface and lens as overlapping sibling layers; use `background: false` when
+  explicitly targeting that surface on Chromium.
 - **Overlap composition.** Full cover hides the background copy. Partial cover
   uses one reusable even-odd SVG clip path; pure moves mutate only path geometry.
 - **Auto-tracked CSS motion.** A lens joins the shared rAF ticker while a CSS
@@ -352,7 +402,9 @@ The library absorbs the things a refraction effect normally pushes onto you:
 This is one API with an honest backend contract, not a promise that every
 engine renders identical pixels. Read `handle.backends`, the mirrored
 `data-lg-backend` attribute, or `scope.getDiagnostics()` when the distinction
-matters to your product.
+matters to your product. The bounded DOM and media columns describe lenses that
+select those registered sources with `background: false`; a default Chromium
+lens intentionally stays on the compositor backdrop route.
 
 ## Migrating from v0.0.2
 
