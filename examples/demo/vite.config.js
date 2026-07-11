@@ -2,10 +2,10 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Dogfood the package: import it by its published name, resolved to the live
-// TypeScript source so the demo updates without a rebuild. (The components
-// import their own CSS, so Vite injects it automatically in dev.)
-export default defineConfig({
+// Development resolves the package name to live source for fast iteration.
+// Production deliberately resolves the real package exports from dist so the
+// catalogue catches broken entry points before release.
+export default defineConfig(({ command }) => ({
   plugins: [
     react(),
     // The library keeps module-level singletons (filter defs, geometry
@@ -21,21 +21,24 @@ export default defineConfig({
       },
     },
   ],
-  resolve: {
-    alias: [
-      {
-        find: "@tomagranate/liquid-glass/react",
-        replacement: fileURLToPath(
-          new URL("../../src/react/index.tsx", import.meta.url),
-        ),
-      },
-      {
-        find: "@tomagranate/liquid-glass",
-        replacement: fileURLToPath(
-          new URL("../../src/index.ts", import.meta.url),
-        ),
-      },
-    ],
-  },
+  resolve:
+    command === "serve"
+      ? {
+          alias: [
+            {
+              find: "@tomagranate/liquid-glass/react",
+              replacement: fileURLToPath(
+                new URL("../../src/react/index.tsx", import.meta.url),
+              ),
+            },
+            {
+              find: "@tomagranate/liquid-glass",
+              replacement: fileURLToPath(
+                new URL("../../src/index.ts", import.meta.url),
+              ),
+            },
+          ],
+        }
+      : undefined,
   server: { port: 5180, host: true },
-});
+}));

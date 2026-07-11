@@ -4,8 +4,8 @@
  * A liquid-glass (Apple-style refraction) effect for the web. The effect rests
  * on a single SVG filter primitive, `feDisplacementMap`, applied to painted
  * content. Nothing is sampled from underneath the glass — the content's own
- * pixels are the ones moving, so it works in every browser with a plain
- * `filter: url(#glass)`.
+ * pixels are the ones moving. Chromium gets a compositor backdrop tier;
+ * Firefox and Safari use budgeted copy/content paths with explicit fallbacks.
  *
  * One call per glass panel — {@link glass} — works
  * with zero configuration over any page, and gets better when the page

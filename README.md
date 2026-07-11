@@ -1,11 +1,11 @@
 # @tomagranate/liquid-glass
 
-An Apple-style **liquid-glass** (refraction) effect for the web. The whole effect
-rests on a single SVG filter primitive, **`feDisplacementMap`** — nothing is
-sampled from underneath the glass, the content's own pixels are the ones moving —
-so it's a plain `filter: url(#glass)` that works in **every** browser (Chromium,
-Firefox, Safari), no flags. Framework-independent, with optional React bindings
-and a WebGL backend for `<canvas>`/`<video>`.
+An Apple-style **liquid-glass** (refraction) effect with progressive enhancement.
+Chromium can sample the live backdrop in the compositor; Safari and Firefox use
+bounded SVG-filtered copies or content surfaces when they fit the calibrated
+budget, and otherwise keep the component usable with native blur, tint, rim,
+and sheen. The framework-independent core also includes a WebGL backend for
+`<canvas>`/`<video>`.
 
 One call per glass panel — **`glass(el)`** (or **`<Glass>`** in React) — works
 with **zero configuration** over any page, and gets *better* when the page
@@ -80,29 +80,27 @@ import { Glass } from "@tomagranate/liquid-glass/react";
 </Glass>;
 ```
 
-### B — Nav over live scrolling content
+### B — Lens over a bounded live-content island
 
-Register the scroller's content as a **content surface**; any lens over it bends
-the live pixels in place as they scroll — no duplicate copy of the page.
+Register only the UI island that earns in-place refraction. Keeping content
+surfaces bounded gives Firefox and Safari predictable work; a general nav should
+use the zero-config route shown above and let the runtime select its backend.
 
 ```ts
 import { glass, createSurface } from "@tomagranate/liquid-glass";
 
-createSurface(document.querySelector("main")); // content bends in place
-glass(document.querySelector("nav"), { radius: 999, blur: 2 });
+createSurface(document.querySelector(".live-card"));
+glass(document.querySelector(".card-lens"), { radius: 24, blur: 2 });
 ```
 
 ```tsx
 import { Glass, GlassSurface } from "@tomagranate/liquid-glass/react";
 
 <>
-  <GlassSurface background>
-    <main>{page}</main>
+  <GlassSurface background className="live-card">
+    {liveCardContent}
+    <Glass className="card-lens" radius={24} blur={2} />
   </GlassSurface>
-  {/* The nav lives outside the surface, so it refracts what scrolls beneath. */}
-  <Glass as="nav" radius={999} blur={2}>
-    {links}
-  </Glass>
 </>;
 ```
 
@@ -149,6 +147,7 @@ in `useLayoutEffect`).
 | `<GlassSurface background>` | Register the subtree as a content surface. |
 | `<GlassMediaSurface live>` | Register the first `<video>`/`<canvas>`/`<img>` descendant as a media surface. |
 | `useGlass(ref, opts)` | Attach a lens to an existing element; returns the live `GlassHandle` (null before mount). |
+| `useGlassDiagnostics(interval?)` | Read real counters and policy decisions for the nearest root (500 ms status cadence; `0` for one shot). |
 | `useSurface(ref, opts)` | Register an existing element as a content surface. |
 | `useMediaSurface(ref, opts)` | Register an existing media element as a media surface. |
 
@@ -338,6 +337,19 @@ The library absorbs the things a refraction effect normally pushes onto you:
 - **Nested surfaces are discouraged.** They produce a development warning;
   bounded siblings have unambiguous filter ownership and budgets.
 
+## Browser strategy
+
+| Engine | Default wallpaper/live page route | Bounded DOM surfaces | Video/canvas |
+| --- | --- | --- | --- |
+| Chromium | Compositor `backdrop-filter: url()` with aggregate lean-tier adaptation | SVG displacement within budget, then configured fallback | WebGL while visible and overlapping |
+| Firefox | Painted background copy; scrolling may show one-frame alignment lag | SVG displacement can be software-rendered, so the conservative budget matters | WebGL while visible and overlapping |
+| Safari | Painted copy for small workloads; aggregate copy workload switches dense groups to fallback | SVG displacement within WebKit size/work limits, then native blur or tint | WebGL while visible and overlapping |
+
+This is one API with an honest backend contract, not a promise that every
+engine renders identical pixels. Read `handle.backends`, the mirrored
+`data-lg-backend` attribute, or `scope.getDiagnostics()` when the distinction
+matters to your product.
+
 ## Migrating from v0.0.2
 
 v0.1 is a clean break. The old API is gone:
@@ -373,8 +385,10 @@ a WebGL shockwave), see the demo in [`examples/demo`](examples/demo).
 npm install
 npm run dev        # the showcase demo → http://localhost:5180
 npm run build      # build the package to dist/
+npm run build:demo # production catalogue, resolved through package exports
 npm run build:perf # production package-export benchmark fixture
-npm run perf:all   # branded Chrome, Firefox, Safari W3C performance gate
+npm run perf:all   # branded Chrome, Firefox, and real Safari W3C gate
+npm run perf:all -- --quick # smaller local preflight
 npm test           # vitest
 npm run lint       # biome
 npm run typecheck  # tsc --noEmit
@@ -384,6 +398,9 @@ Run `build:perf` after any `build` or `test:package` command because those clean
 the root `dist/`. The branded-browser harness verifies the fixture and its
 package-export provenance before opening a browser, and never rebuilds it
 implicitly.
+The macOS Safari job uses `safaridriver` against the same production fixture and
+is a release gate; WebKit emulation is useful structurally but does not replace
+that run.
 
 ## License
 

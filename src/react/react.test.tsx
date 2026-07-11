@@ -16,6 +16,7 @@ import {
   GlassRoot,
   GlassSurface,
   useGlass,
+  useGlassDiagnostics,
   useMediaSurface,
   useSurface,
 } from "./index.js";
@@ -55,6 +56,7 @@ vi.mock("../core/api.js", () => ({
 }));
 vi.mock("../core/scope.js", () => ({
   createGlassScope: vi.fn(() => scoped),
+  defaultGlassScope: scoped,
 }));
 
 let container: HTMLElement;
@@ -88,6 +90,29 @@ describe("react bindings", () => {
     for (const g of [lens, surface, media, scoped]) {
       for (const fn of Object.values(g)) fn.mockReset();
     }
+    scoped.getDiagnostics.mockReturnValue({
+      lenses: 2,
+      contentSurfaces: 1,
+      mediaSurfaces: 0,
+      filterRebuilds: 0,
+      mapRegenerations: 0,
+      geometryRafCallbacks: 0,
+      mediaRafCallbacks: 0,
+      mediaUploads: 0,
+      backdropWorkload: {
+        lenses: 2,
+        devicePixelPassArea: 100,
+        tier: "full",
+        reason: "within-aggregate-backdrop-budget",
+      },
+      backgroundCopyWorkload: {
+        lenses: 0,
+        devicePixelPassArea: 0,
+        tier: "full",
+        reason: "within-aggregate-background-copy-budget",
+      },
+      policy: [],
+    });
     lens.create.mockImplementation(() => ({
       update: lens.update,
       geometryChanged: lens.geometryChanged,
@@ -166,6 +191,20 @@ describe("react bindings", () => {
     unmount();
     await Promise.resolve();
     expect(scoped.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("useGlassDiagnostics reads the nearest public scope snapshot", () => {
+    function ReadDiagnostics() {
+      const diagnostics = useGlassDiagnostics(0);
+      return <output>{diagnostics.lenses}</output>;
+    }
+    render(
+      <GlassRoot>
+        <ReadDiagnostics />
+      </GlassRoot>,
+    );
+    expect(container.querySelector("output")?.textContent).toBe("2");
+    expect(scoped.getDiagnostics).toHaveBeenCalled();
   });
 
   it("<Glass> passes options to glass() and spreads DOM props on the host", () => {

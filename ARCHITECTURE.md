@@ -6,7 +6,7 @@ media), and the Chromium-only zero-lag backdrop tier that collapses them into a
 compositor-sampled `backdrop-filter`. See the [README](README.md) for
 installation and usage.
 
-## The key idea (and why it works in every browser)
+## The key idea and progressive backend contract
 
 Most web "liquid glass" demos use `backdrop-filter: url(#filter)`, which only
 works in Chromium. This library sidesteps that entirely. (Chromium *also* gets an
@@ -21,8 +21,11 @@ we generate — and shifts each pixel of the content by an amount the map encode
 **Nothing is sampled from underneath the glass; the content's own pixels are the
 ones moving.** So the refraction is a plain `filter: url(#glass)` applied to a
 **copy of what sits behind the glass**, painted on its own layer and bent by the
-map. Because it is an ordinary SVG `filter` (not `backdrop-filter`), it renders
-in Chromium, Firefox and Safari with no flags.
+map. Because it is an ordinary SVG `filter` (not `backdrop-filter`), the copied
+and bounded-content paths are available in Chromium, Firefox, and Safari. They
+are not equally cheap: Firefox may software-render displacement and WebKit has
+strict filter limits, so policy can select native blur, tint, or no effect before
+an expensive path harms the page.
 
 Surfaces an SVG filter can't read — a `<canvas>` QR code, a playing `<video>` —
 fall back to a small WebGL shader fed the same displacement (see

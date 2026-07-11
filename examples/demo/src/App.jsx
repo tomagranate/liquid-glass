@@ -20,8 +20,14 @@ import {
   ChatBubbleOvalLeftEllipsisIcon,
   EnvelopeIcon,
 } from "@heroicons/react/24/solid";
-import { Glass, GlassSurface, useGlass } from "@tomagranate/liquid-glass/react";
-import { setBackground } from "@tomagranate/liquid-glass";
+import {
+  Glass,
+  GlassRoot,
+  GlassSurface,
+  useGlass,
+  useGlassDiagnostics,
+} from "@tomagranate/liquid-glass/react";
+import { createGlassScope, setBackground } from "@tomagranate/liquid-glass";
 import { CodeBlock } from "./CodeBlock.jsx";
 import {
   GlassButton,
@@ -72,15 +78,14 @@ const HERO_CODE = [
     lang: "jsx",
     code: `import { Glass, GlassSurface } from "@tomagranate/liquid-glass/react";
 
-// One surface wraps the scroller — every lens over it refracts live content.
-<GlassSurface background>
-  <main>{page}</main>
-</GlassSurface>
-
-// Chrome and a draggable lens render in a sibling overlay, so they bend the
-// page in place as it scrolls beneath them:
+// Zero configuration handles wallpaper and Chromium's live backdrop tier.
 <Glass as="nav">{links}</Glass>
-<Glass radius="50%" onPointerMove={drag} />  // drag calls geometryChanged()`,
+
+// Register only the bounded DOM islands that need in-place refraction.
+<GlassSurface background className="bounded-card">
+  {liveContent}
+  <Glass radius="50%" />
+</GlassSurface>`,
   },
   {
     label: "Vanilla",
@@ -88,7 +93,7 @@ const HERO_CODE = [
     code: `import { glass, createSurface, setBackground } from "@tomagranate/liquid-glass";
 
 setBackground(null);                            // auto-detect document.body
-createSurface(document.querySelector("main"));  // content bends in place
+createSurface(document.querySelector(".card")); // bounded live island
 glass(lensEl, { radius: "50%" });`,
   },
 ];
@@ -180,6 +185,53 @@ function Specimen({ material }) {
   return <div ref={ref} className="specimen">Specimen</div>;
 }`;
 
+const CATALOGUE_CASES = {
+  wallpaper: "wallpaper-zero-config",
+  backdrop: "live-backdrop-auto-fallback",
+  content: "bounded-content-surface",
+  partial: "partial-overlap-composition",
+  reduced: "reduced-quality",
+  oversized: "oversized-surface-fallback",
+  density: "density-32-lenses",
+  vanilla: "vanilla-api",
+  scopes: "nested-scope-isolation",
+};
+
+const DENSITY_LENSES = [
+  "01",
+  "02",
+  "03",
+  "04",
+  "05",
+  "06",
+  "07",
+  "08",
+  "09",
+  "10",
+  "11",
+  "12",
+  "13",
+  "14",
+  "15",
+  "16",
+  "17",
+  "18",
+  "19",
+  "20",
+  "21",
+  "22",
+  "23",
+  "24",
+  "25",
+  "26",
+  "27",
+  "28",
+  "29",
+  "30",
+  "31",
+  "32",
+];
+
 export default function App() {
   const [wallpaper, setWallpaper] = useState(WALLPAPERS[2]);
 
@@ -241,22 +293,26 @@ export default function App() {
 
   return (
     <div className="app-root">
-      {/* The full-page surface wraps the scroller (never the scroller itself —
-          Safari rule). Its content bends in place under every overlay lens. */}
-      <GlassSurface background className="app-surface">
-        <div className="app-scroller">
-          <main>
-            <Scenes {...sceneProps} />
-          </main>
-        </div>
-      </GlassSurface>
+      <div className="app-scroller">
+        <main>
+          <Scenes {...sceneProps} />
+        </main>
+      </div>
 
-      {/* Chrome renders OUTSIDE the surface, so it refracts the live page. */}
+      {/* General chrome uses the zero-config backdrop/copy route. Content
+          surfaces appear only as bounded islands in the catalogue below. */}
       <div className="overlay-layer">
         <Nav />
-        <GlassLens className="hero-lens" size={200} hint="Drag me" />
+        <GlassLens
+          className="hero-lens"
+          size={200}
+          hint="Drag me"
+          data-demo-case="draggable-lens"
+          aria-label="Draggable glass lens"
+        />
         <WallpaperSwitcher current={wallpaper} onSelect={setWallpaper} />
       </div>
+      <DiagnosticsPanel />
     </div>
   );
 }
@@ -275,6 +331,7 @@ function Scenes(p) {
       />
       <ControlCenterScene {...p} />
       <VideoScene />
+      <CatalogueScene />
       <ShockwaveScene />
       <PlaygroundScene tune={p.tune} setTune={p.setTune} />
       <Footer />
@@ -357,14 +414,18 @@ function Hero() {
   };
 
   return (
-    <header className="hero shell" id="top">
+    <header
+      className="hero shell"
+      id="top"
+      data-demo-case={CATALOGUE_CASES.wallpaper}
+    >
       <p className="eyebrow">@tomagranate/liquid-glass</p>
       <h1 className="hero-title">Interfaces that bend light.</h1>
       <p className="lede">
-        An Apple-style liquid-glass material for the web, built on a single SVG
-        filter primitive. Every surface on this page refracts what lies behind
-        it — wallpaper and live content alike. No screenshots, no backdrop
-        hacks, and a WebGL fallback for canvas and video.
+        Progressive liquid-glass for the web. Chromium gets live compositor
+        refraction; Safari and Firefox use bounded copied or in-place surfaces,
+        then degrade to native blur or tint before the effect can overwhelm a
+        frame. Video and canvas use a WebGL media path.
       </p>
       <div className="hero-actions">
         <GlassButton
@@ -412,7 +473,11 @@ function SceneHeader({ index, title, children }) {
 
 function DockScene() {
   return (
-    <section className="scene shell" id="dock">
+    <section
+      className="scene shell"
+      id="dock"
+      data-demo-case={CATALOGUE_CASES.backdrop}
+    >
       <SceneHeader index="01" title="One slab of glass, eight apps.">
         The dock is a single glass panel; the icons ride on top in the content
         layer. Hover an icon — the wallpaper stays bent underneath while the
@@ -439,7 +504,7 @@ function LockScreenScene({ now, playing, setPlaying, progress, setProgress }) {
   });
 
   return (
-    <section className="scene shell">
+    <section className="scene shell" data-demo-case="slider">
       <SceneHeader
         index="02"
         title="Read your notifications through the wallpaper."
@@ -556,7 +621,7 @@ const APPEARANCE_GLASS = {
 function ControlCenterScene(p) {
   const tileGlass = APPEARANCE_GLASS[p.appearance];
   return (
-    <section className="scene shell">
+    <section className="scene shell" data-demo-case="switch-slider-toggle">
       <SceneHeader index="03" title="Controls with real lenses for thumbs.">
         Each switch track is its own tiny surface; the thumb is a lens that
         bends the track — colour transition and all — in place as it slides, and
@@ -642,7 +707,7 @@ function ControlCenterScene(p) {
 
 function VideoScene() {
   return (
-    <section className="scene shell">
+    <section className="scene shell" data-demo-case="video-media">
       <SceneHeader index="04" title="Glass over live video.">
         A `GlassMediaSurface` registers the video and drives a WebGL shader fed
         the same displacement map, because an SVG filter can't sample a playing
@@ -656,10 +721,317 @@ function VideoScene() {
   );
 }
 
+function CatalogueScene() {
+  return (
+    <section className="scene shell" id="catalogue">
+      <SceneHeader index="05" title="The routing and performance catalogue.">
+        These specimens make the backend contract visible. Each one is a stable
+        automated-test target, and each expensive effect is bounded to the UI
+        element that earns it.
+      </SceneHeader>
+      <div className="catalogue-grid stage">
+        <CatalogueCard
+          demoCase={CATALOGUE_CASES.content}
+          title="Bounded live content"
+          description="A registered island bends its own live DOM under the lens."
+        >
+          <GlassSurface background className="bounded-surface">
+            <div className="surface-stripes" aria-hidden="true" />
+            <p>Live content remains selectable and clickable.</p>
+            <Glass className="catalogue-lens" preset="thin">
+              Content SVG
+            </Glass>
+          </GlassSurface>
+        </CatalogueCard>
+
+        <CatalogueCard
+          demoCase={CATALOGUE_CASES.partial}
+          title="Partial overlap"
+          description="Two bounded sources meet one lens without double-bending the uncovered area."
+        >
+          <div className="partial-stage">
+            <GlassSurface className="partial-surface partial-a">
+              Surface A
+            </GlassSurface>
+            <GlassSurface className="partial-surface partial-b">
+              Surface B
+            </GlassSurface>
+            <Glass className="partial-lens" radius={28}>
+              A + B
+            </Glass>
+          </div>
+        </CatalogueCard>
+
+        <CatalogueCard
+          demoCase={CATALOGUE_CASES.reduced}
+          title="Reduced quality"
+          description="Performance quality fixes DPR at one and removes costly chroma and specular passes."
+        >
+          <Glass className="quality-sample" quality="performance">
+            quality=&quot;performance&quot;
+          </Glass>
+        </CatalogueCard>
+
+        <CatalogueCard
+          demoCase={CATALOGUE_CASES.oversized}
+          title="Oversized policy fallback"
+          description="An intentionally large surface demonstrates the selected native, tint, or none fallback."
+          wide
+        >
+          <Glass
+            className="oversized-sample"
+            quality="balanced"
+            fallback="blur"
+            background="linear-gradient(135deg, #31d8c6, #402d86 55%, #ff9a52)"
+          >
+            <span>Resize the viewport to cross the engine budget.</span>
+          </Glass>
+        </CatalogueCard>
+
+        <CatalogueCard
+          demoCase={CATALOGUE_CASES.density}
+          title="32-lens density"
+          description="The aggregate policy leans or falls back as a group, instead of letting one page collapse."
+          wide
+        >
+          <div
+            className="density-grid"
+            aria-label="Thirty-two live glass lenses"
+          >
+            {DENSITY_LENSES.map((id) => (
+              <Glass
+                className="density-lens"
+                quality="balanced"
+                preset="thin"
+                key={id}
+                aria-label={`Glass lens ${Number(id)}`}
+              >
+                {Number(id)}
+              </Glass>
+            ))}
+          </div>
+        </CatalogueCard>
+
+        <VanillaCase />
+        <ScopeIsolationCase />
+      </div>
+    </section>
+  );
+}
+
+function CatalogueCard({
+  demoCase,
+  title,
+  description,
+  wide = false,
+  children,
+}) {
+  return (
+    <article
+      className={`catalogue-card${wide ? " catalogue-card-wide" : ""}`}
+      data-demo-case={demoCase}
+      tabIndex={0}
+    >
+      <div className="catalogue-copy">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+      <div className="catalogue-stage">{children}</div>
+    </article>
+  );
+}
+
+function VanillaCase() {
+  const host = useRef(null);
+  const scopeRef = useRef(null);
+  const [diagnostics, setDiagnostics] = useState(null);
+
+  useLayoutEffect(() => {
+    const element = host.current;
+    if (!element) return;
+    const scope = createGlassScope({ quality: "performance" });
+    scopeRef.current = scope;
+    const handle = scope.glass(element, { preset: "prominent" });
+    const update = () => setDiagnostics(scope.getDiagnostics());
+    update();
+    const timer = window.setInterval(update, 500);
+    return () => {
+      window.clearInterval(timer);
+      handle.destroy();
+      scope.destroy();
+      scopeRef.current = null;
+    };
+  }, []);
+
+  return (
+    <CatalogueCard
+      demoCase={CATALOGUE_CASES.vanilla}
+      title="Vanilla API"
+      description="A private scope owns this lens and exposes its real counters without React internals."
+    >
+      <div ref={host} className="vanilla-sample">
+        <span>scope.glass(element)</span>
+        <small>{diagnostics?.lenses ?? 0} active lens</small>
+      </div>
+    </CatalogueCard>
+  );
+}
+
+function ScopeIsolationCase() {
+  return (
+    <CatalogueCard
+      demoCase={CATALOGUE_CASES.scopes}
+      title="Nested root isolation"
+      description="Each root routes only to surfaces it owns, even when the specimens overlap."
+    >
+      <div className="scope-stage">
+        <GlassRoot quality="balanced">
+          <GlassSurface className="scope-surface scope-outer">
+            Outer scope
+            <Glass className="scope-lens">Outer lens</Glass>
+            <GlassRoot quality="performance">
+              <GlassSurface className="scope-surface scope-inner">
+                Inner scope
+                <Glass className="scope-lens">Inner lens</Glass>
+              </GlassSurface>
+            </GlassRoot>
+          </GlassSurface>
+        </GlassRoot>
+      </div>
+    </CatalogueCard>
+  );
+}
+
+function DiagnosticsPanel() {
+  const diagnostics = useGlassDiagnostics();
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState(CATALOGUE_CASES.wallpaper);
+  const [snapshot, setSnapshot] = useState({
+    backends: ["pending"],
+    lenses: 0,
+  });
+
+  useEffect(() => {
+    const select = (event) => {
+      const match = event.target.closest?.("[data-demo-case]");
+      if (match?.dataset.demoCase) setSelected(match.dataset.demoCase);
+    };
+    document.addEventListener("pointerdown", select, true);
+    document.addEventListener("focusin", select, true);
+    return () => {
+      document.removeEventListener("pointerdown", select, true);
+      document.removeEventListener("focusin", select, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    const read = () => {
+      const root = document.querySelector(`[data-demo-case="${selected}"]`);
+      const lenses = [...(root?.querySelectorAll("[data-lg-backend]") ?? [])];
+      if (root?.matches("[data-lg-backend]")) lenses.unshift(root);
+      const backends = [
+        ...new Set(
+          lenses.flatMap((el) =>
+            (el.dataset.lgBackend || "pending").split(",").filter(Boolean),
+          ),
+        ),
+      ];
+      const policy = lenses.some((el) =>
+        el.dataset.lgBackend?.includes("native"),
+      )
+        ? "budget or browser fallback"
+        : backends.includes("none")
+          ? "effect unavailable"
+          : "within active policy";
+      setSnapshot({
+        backends: backends.length ? backends : ["pending"],
+        lenses: lenses.length,
+        quality:
+          selected === CATALOGUE_CASES.reduced ? "performance" : "balanced",
+        policy: diagnostics.policy.at(-1)?.reason ?? policy,
+        dpr: diagnostics.policy.at(-1)?.dpr,
+        chroma: diagnostics.policy.at(-1)?.chroma,
+        surfaces: diagnostics.contentSurfaces + diagnostics.mediaSurfaces,
+        idle:
+          diagnostics.geometryRafCallbacks === 0 &&
+          diagnostics.mediaRafCallbacks === 0,
+      });
+    };
+    read();
+    const timer = window.setInterval(read, 750);
+    return () => window.clearInterval(timer);
+  }, [diagnostics, selected]);
+
+  const engine = /Firefox/i.test(navigator.userAgent)
+    ? "Firefox"
+    : /Safari/i.test(navigator.userAgent) &&
+        !/Chrome|Chromium/i.test(navigator.userAgent)
+      ? "Safari"
+      : "Chromium";
+
+  return (
+    <aside
+      className="diagnostics"
+      data-open={open}
+      aria-label="Glass diagnostics"
+    >
+      <button
+        type="button"
+        className="diagnostics-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span>Diagnostics</span>
+        <strong>{snapshot.backends.join(" + ")}</strong>
+      </button>
+      {open && (
+        <dl className="diagnostics-grid">
+          <div>
+            <dt>Example</dt>
+            <dd>{selected}</dd>
+          </div>
+          <div>
+            <dt>Browser</dt>
+            <dd>{engine}</dd>
+          </div>
+          <div>
+            <dt>Backend</dt>
+            <dd>{snapshot.backends.join(", ")}</dd>
+          </div>
+          <div>
+            <dt>Quality</dt>
+            <dd>{snapshot.quality}</dd>
+          </div>
+          <div>
+            <dt>Fallback</dt>
+            <dd>{snapshot.policy}</dd>
+          </div>
+          <div>
+            <dt>Active lens / surface</dt>
+            <dd>{`${diagnostics.lenses} / ${snapshot.surfaces ?? 0}`}</dd>
+          </div>
+          <div>
+            <dt>Effective detail</dt>
+            <dd>
+              {snapshot.dpr == null
+                ? "pending"
+                : `DPR ${snapshot.dpr} · chroma ${snapshot.chroma}`}
+            </dd>
+          </div>
+          <div>
+            <dt>Invariant state</dt>
+            <dd>{snapshot.idle ? "idle-safe" : "live media"}</dd>
+          </div>
+        </dl>
+      )}
+    </aside>
+  );
+}
+
 function ShockwaveScene() {
   return (
-    <section className="scene shell">
-      <SceneHeader index="05" title="Shockwaves through the light field.">
+    <section className="scene shell" data-demo-case="canvas-media">
+      <SceneHeader index="06" title="Shockwaves through the light field.">
         The low-level API: a hand-written WebGL2 shader, no `glass()` call in
         sight. Tap the field to send one slow, wide refracting pulse across the
         source pixels — the wavefront bends the geometry, glints, and fades back
@@ -676,8 +1048,12 @@ function ShockwaveScene() {
 function PlaygroundScene({ tune, setTune }) {
   const set = (key) => (v) => setTune((t) => ({ ...t, [key]: v }));
   return (
-    <section className="scene shell" id="playground">
-      <SceneHeader index="06" title="Mix your own material.">
+    <section
+      className="scene shell"
+      id="playground"
+      data-demo-case="material-update"
+    >
+      <SceneHeader index="07" title="Mix your own material.">
         Displacement, rim depth, chromatic aberration, frost, and rim light are
         all parameters. Tune the specimen — each change is a `handle.update()`
         patch, not a rebuild — then ship the numbers you like.

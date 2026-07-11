@@ -39,17 +39,7 @@ a {
   position: fixed;
   inset: 0;
   overflow: hidden;
-}
-
-/* The page surface (GlassSurface) — a fixed, non-scrolling registered surface.
-   The library paints the cover-fit background copy into it and bends its
-   content in place under every overlay lens. It must NOT be the scroller
-   itself (Safari rule); the scroller lives inside it. */
-.app-surface {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
+  isolation: isolate;
 }
 
 .app-scroller {
@@ -242,6 +232,7 @@ a {
 /* ── Scenes ──────────────────────────────────────────────────────────────── */
 .scene {
   padding: 96px 0;
+  scroll-margin-top: 96px;
 }
 .stage {
   margin-top: 52px;
@@ -250,6 +241,287 @@ a {
   display: flex;
   justify-content: center;
   padding: 24px 0;
+}
+
+/* ── Executable catalogue ──────────────────────────────────────────────── */
+.catalogue-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.catalogue-card {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 24px;
+  background: rgba(7, 9, 21, 0.34);
+  outline: none;
+}
+.catalogue-card:focus-visible {
+  outline: 2px solid rgba(155, 232, 255, 0.95);
+  outline-offset: 3px;
+}
+.catalogue-card-wide {
+  grid-column: 1 / -1;
+}
+.catalogue-copy {
+  display: grid;
+  gap: 8px;
+}
+.catalogue-copy h3,
+.catalogue-copy p {
+  margin: 0;
+}
+.catalogue-copy h3 {
+  font-size: 20px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.catalogue-copy p {
+  max-width: 58ch;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 15px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.catalogue-stage {
+  min-width: 0;
+  margin-top: 22px;
+}
+.bounded-surface {
+  position: relative;
+  min-height: 210px;
+  padding: 28px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: rgba(10, 15, 38, 0.45);
+}
+.bounded-surface p {
+  position: relative;
+  z-index: 1;
+  max-width: 24ch;
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.45;
+}
+.surface-stripes {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 24px,
+    rgba(255, 255, 255, 0.08) 24px 25px
+  );
+}
+.catalogue-lens {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  width: 132px;
+  height: 82px;
+  place-items: center;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.partial-stage,
+.scope-stage {
+  position: relative;
+  min-height: 210px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.partial-surface {
+  position: absolute;
+  display: grid;
+  width: 62%;
+  height: 62%;
+  place-items: center;
+  border-radius: 18px;
+  font-weight: 600;
+}
+.partial-a {
+  top: 16px;
+  left: 16px;
+  background: linear-gradient(135deg, #18a48f, #1762b6);
+}
+.partial-b {
+  right: 16px;
+  bottom: 16px;
+  background: linear-gradient(135deg, #8b3fc1, #e0614f);
+}
+.partial-lens {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 150px;
+  height: 92px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  font-size: 13px;
+  font-weight: 650;
+}
+.quality-sample,
+.oversized-sample,
+.vanilla-sample {
+  display: grid;
+  min-height: 116px;
+  place-items: center;
+  padding: 20px;
+  border-radius: 24px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.oversized-sample {
+  min-height: min(52vw, 460px);
+  border-radius: 32px;
+}
+.density-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 10px;
+}
+.density-lens {
+  display: grid;
+  aspect-ratio: 1;
+  min-width: 0;
+  place-items: center;
+  border-radius: 18px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.vanilla-sample {
+  gap: 8px;
+}
+.vanilla-sample small {
+  color: rgba(255, 255, 255, 0.65);
+}
+.scope-surface {
+  position: absolute;
+  padding: 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.scope-outer {
+  inset: 16px 68px 34px 16px;
+  background: linear-gradient(
+    135deg,
+    rgba(34, 193, 195, 0.72),
+    rgba(37, 82, 180, 0.72)
+  );
+}
+.scope-inner {
+  right: -44px;
+  bottom: -20px;
+  width: 74%;
+  height: 68%;
+  background: linear-gradient(
+    135deg,
+    rgba(176, 74, 210, 0.78),
+    rgba(245, 107, 83, 0.78)
+  );
+}
+.scope-lens {
+  position: absolute;
+  right: 12px;
+  top: 36px;
+  display: grid;
+  width: 104px;
+  height: 64px;
+  place-items: center;
+  border-radius: 20px;
+  font-size: 11px;
+}
+.scope-inner .scope-lens {
+  top: 42px;
+  left: 18px;
+}
+
+/* Compact, expandable runtime truth. It is fixed so automation can inspect it
+   without turning every example into a developer-tools layout. */
+.diagnostics {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 80;
+  width: min(360px, calc(100vw - 36px));
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 18px;
+  background: rgba(7, 9, 19, 0.9);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(20px) saturate(1.2);
+}
+.diagnostics-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+.diagnostics-toggle span {
+  font-size: 13px;
+  font-weight: 600;
+}
+.diagnostics-toggle strong {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(160, 232, 255, 0.9);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diagnostics-toggle:focus-visible {
+  outline: 2px solid #9be8ff;
+  outline-offset: -3px;
+}
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 0 14px 14px;
+}
+.diagnostics-grid div {
+  min-width: 0;
+  padding: 9px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.diagnostics-grid div:nth-child(even) {
+  padding-left: 12px;
+}
+.diagnostics-grid dt,
+.diagnostics-grid dd {
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diagnostics-grid dt {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: 600;
+}
+.diagnostics-grid dd {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.58);
+  font-family: var(--mono);
+  font-size: 10px;
 }
 
 /* Lock screen */
@@ -558,7 +830,7 @@ a {
 /* ── Wallpaper switcher ──────────────────────────────────────────────────── */
 .switcher {
   position: fixed;
-  right: 18px;
+  left: 18px;
   bottom: 18px;
   z-index: 60;
   border-radius: 999px;
@@ -589,4 +861,46 @@ a {
     inset 0 0 0 1px rgba(255, 255, 255, 0.25),
     0 0 0 2px rgba(255, 255, 255, 0.9),
     0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+@media (max-width: 720px) {
+  .shell {
+    width: min(100% - 32px, 1080px);
+  }
+  .scene {
+    padding: 72px 0;
+  }
+  .catalogue-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .catalogue-card-wide {
+    grid-column: auto;
+  }
+  .density-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .catalogue-copy p {
+    font-size: 16px;
+  }
+  .diagnostics {
+    bottom: 76px;
+  }
+  .nav-links a:first-child {
+    display: none;
+  }
+  .hero-lens {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -20,8 +20,9 @@ import {
   useState,
 } from "react";
 import { createMediaSurface, createSurface, glass } from "../core/api.js";
-import { createGlassScope } from "../core/scope.js";
+import { createGlassScope, defaultGlassScope } from "../core/scope.js";
 import type {
+  GlassDiagnostics,
   GlassHandle,
   GlassOptions,
   GlassScope,
@@ -58,6 +59,29 @@ export function GlassRoot({
       {children}
     </GlassScopeContext.Provider>
   );
+}
+
+/**
+ * Poll the current root's public diagnostics snapshot. The default cadence is
+ * deliberately slow enough for a compact status UI; pass `0` for a one-shot
+ * snapshot and use a dedicated benchmark harness for frame-level telemetry.
+ */
+export function useGlassDiagnostics(interval = 500): GlassDiagnostics {
+  const scoped = useContext(GlassScopeContext);
+  const scope = scoped ?? defaultGlassScope;
+  const [diagnostics, setDiagnostics] = useState(() => scope.getDiagnostics());
+
+  useEffect(() => {
+    setDiagnostics(scope.getDiagnostics());
+    if (interval <= 0) return;
+    const timer = window.setInterval(
+      () => setDiagnostics(scope.getDiagnostics()),
+      interval,
+    );
+    return () => window.clearInterval(timer);
+  }, [interval, scope]);
+
+  return diagnostics;
 }
 
 /* ── option / DOM prop separation ─────────────────────────────────────────── */
