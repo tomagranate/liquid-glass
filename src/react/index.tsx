@@ -8,25 +8,57 @@
  */
 import {
   type ComponentPropsWithoutRef,
+  createContext,
   type ElementType,
   type ReactElement,
   type ReactNode,
   type RefObject,
   useEffect,
+  useContext,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
-import { glass } from "../core/glass.js";
-import { createMediaSurface } from "../core/media.js";
-import { createSurface } from "../core/surfaces.js";
+import { createMediaSurface, createSurface, glass } from "../core/api.js";
+import { createGlassScope } from "../core/scope.js";
 import type {
   GlassHandle,
   GlassOptions,
+  GlassScope,
+  GlassScopeOptions,
   MediaSurfaceOptions,
   SurfaceHandle,
   SurfaceOptions,
 } from "../core/types.js";
+
+const GlassScopeContext = createContext<GlassScope | null>(null);
+
+export interface GlassRootProps extends GlassScopeOptions {
+  children?: ReactNode;
+}
+
+/** Isolated routing owner. Nested roots and portals retain context identity. */
+export function GlassRoot({
+  children,
+  ...options
+}: GlassRootProps): ReactElement {
+  const scopeRef = useRef<GlassScope | null>(null);
+  const generation = useRef(0);
+  scopeRef.current ??= createGlassScope(options);
+  useEffect(() => {
+    const current = ++generation.current;
+    return () => {
+      queueMicrotask(() => {
+        if (generation.current === current) scopeRef.current?.destroy();
+      });
+    };
+  }, []);
+  return (
+    <GlassScopeContext.Provider value={scopeRef.current}>
+      {children}
+    </GlassScopeContext.Provider>
+  );
+}
 
 /* ── option / DOM prop separation ─────────────────────────────────────────── */
 
@@ -107,6 +139,7 @@ function useGlassHandle(
   ref: RefObject<HTMLElement | null>,
   opts: GlassOptions,
 ): GlassHandle | null {
+  const scope = useContext(GlassScopeContext);
   const [handle, setHandle] = useState<GlassHandle | null>(null);
   const optsRef = useRef(opts);
   optsRef.current = opts;
@@ -115,7 +148,9 @@ function useGlassHandle(
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const h = glass(el, optsRef.current);
+    const h = scope
+      ? scope.glass(el, optsRef.current)
+      : glass(el, optsRef.current);
     handleRef.current = h;
     setHandle(h);
     return () => {
@@ -124,7 +159,7 @@ function useGlassHandle(
       setHandle(null);
     };
     // Created once; option changes flow through the update effect below.
-  }, [ref]);
+  }, [ref, scope]);
 
   const key = glassOptionsKey(opts);
   useEffect(() => {
@@ -173,7 +208,6 @@ export function Glass<As extends ElementType = "div">(
 export type GlassSurfaceProps<As extends ElementType = "div"> = {
   as?: As;
   background?: boolean | string;
-  routing?: SurfaceOptions["routing"];
   children?: ReactNode;
 } & Omit<ComponentPropsWithoutRef<As>, "as" | "children" | "background">;
 
@@ -184,20 +218,23 @@ export type GlassSurfaceProps<As extends ElementType = "div"> = {
 export function GlassSurface<As extends ElementType = "div">(
   props: GlassSurfaceProps<As>,
 ): ReactElement {
-  const { as, background, routing, children, className, ...rest } =
+  const { as, background, children, className, ...rest } =
     props as GlassSurfaceProps<As> & {
       as?: ElementType;
       className?: string;
       children?: ReactNode;
     };
   const ref = useRef<HTMLElement>(null);
+  const scope = useContext(GlassScopeContext);
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const handle = createSurface(el, { background, routing });
+    const handle = scope
+      ? scope.createSurface(el, { background })
+      : createSurface(el, { background });
     return () => handle.destroy();
-  }, [background, routing]);
+  }, [background, scope]);
 
   const Component = (as ?? "div") as ElementType;
   return (
@@ -223,6 +260,7 @@ export type GlassMediaSurfaceProps = {
 export function GlassMediaSurface(props: GlassMediaSurfaceProps): ReactElement {
   const { live, children, ...rest } = props;
   const ref = useRef<HTMLDivElement>(null);
+  const scope = useContext(GlassScopeContext);
 
   useLayoutEffect(() => {
     const host = ref.current;
@@ -236,9 +274,11 @@ export function GlassMediaSurface(props: GlassMediaSurfaceProps): ReactElement {
       );
       return;
     }
-    const handle = createMediaSurface(media, { live });
+    const handle = scope
+      ? scope.createMediaSurface(media, { live })
+      : createMediaSurface(media, { live });
     return () => handle.destroy();
-  }, [live]);
+  }, [live, scope]);
 
   return (
     <div ref={ref} {...rest}>
@@ -270,19 +310,22 @@ export function useSurface(
   ref: RefObject<HTMLElement | null>,
   opts: SurfaceOptions = {},
 ): SurfaceHandle | null {
+  const scope = useContext(GlassScopeContext);
   const [handle, setHandle] = useState<SurfaceHandle | null>(null);
-  const { background, routing } = opts;
+  const { background } = opts;
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const h = createSurface(el, { background, routing });
+    const h = scope
+      ? scope.createSurface(el, { background })
+      : createSurface(el, { background });
     setHandle(h);
     return () => {
       h.destroy();
       setHandle(null);
     };
-  }, [ref, background, routing]);
+  }, [ref, background, scope]);
 
   return handle;
 }
@@ -297,19 +340,22 @@ export function useMediaSurface(
   >,
   opts: MediaSurfaceOptions = {},
 ): SurfaceHandle | null {
+  const scope = useContext(GlassScopeContext);
   const [handle, setHandle] = useState<SurfaceHandle | null>(null);
   const { live } = opts;
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const h = createMediaSurface(el, { live });
+    const h = scope
+      ? scope.createMediaSurface(el, { live })
+      : createMediaSurface(el, { live });
     setHandle(h);
     return () => {
       h.destroy();
       setHandle(null);
     };
-  }, [ref, live]);
+  }, [ref, live, scope]);
 
   return handle;
 }

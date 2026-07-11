@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { page } from "@vitest/browser/context";
 import { setBackground } from "./background.js";
 import { supportsBackdropUrlFilter } from "./filter.js";
 import { glass } from "./glass.js";
 import { WebGLGlass } from "./liquid-glass-webgl.js";
 import { generateDisplacementMap } from "./map.js";
 import { createMediaSurface } from "./media.js";
+import { createGlassScope } from "./scope.js";
 import { createSurface, isSafariEngine } from "./surfaces.js";
 import type { SurfaceHandle } from "./types.js";
 
@@ -76,6 +78,20 @@ function canCreateWebGLGlass(): boolean {
     }
     throw error;
   }
+}
+
+async function screenshotPixels(element: Element): Promise<ImageData> {
+  const base64 = await page.screenshot({ element, save: false });
+  const image = new Image();
+  image.src = `data:image/png;base64,${base64}`;
+  await image.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("2D screenshot context unavailable");
+  context.drawImage(image, 0, 0);
+  return context.getImageData(0, 0, canvas.width, canvas.height);
 }
 
 describe("browser: content surfaces", () => {
@@ -330,8 +346,8 @@ describe("browser: background copy (.lg-bg)", () => {
     expect(lensEl.querySelector(".lg-bg")).toBeNull();
   });
 
-  it("hides .lg-bg while a content surface fully covers the lens", () => {
-    document.body.style.cssText = "margin:0;overflow:hidden;";
+  it("composes partial overlap without blank pixels and hides under full cover", async () => {
+    document.body.style.cssText = "margin:0;overflow:hidden;background:white;";
 
     const surfaceEl = document.createElement("main");
     surfaceEl.style.cssText =
@@ -354,6 +370,31 @@ describe("browser: background copy (.lg-bg)", () => {
     const bg = lensEl.querySelector<HTMLElement>(":scope > .lg-bg");
     expect(bg).toBeTruthy();
     expect(bg?.style.display).not.toBe("none");
+    expect(bg?.style.clipPath).toContain("url(");
+    const clipId = bg?.style.clipPath.match(/#([^)'"]+)/)?.[1];
+    const clipPath = document.getElementById(clipId ?? "");
+    const hole = clipPath?.querySelector("path");
+    expect(hole?.getAttribute("fill-rule")).toBe("evenodd");
+    const beforeHole = hole?.getAttribute("d");
+    const pixels = await screenshotPixels(lensEl);
+    const sample = (x: number, y: number): number[] => {
+      const offset = (y * pixels.width + x) * 4;
+      return Array.from(pixels.data.slice(offset, offset + 4));
+    };
+    const covered = sample(20, 30);
+    const uncovered = sample(100, 30);
+    expect(covered[3]).toBeGreaterThan(240);
+    expect(uncovered[3]).toBeGreaterThan(240);
+    expect(
+      Math.abs(covered[0] - uncovered[0]) +
+        Math.abs(covered[1] - uncovered[1]) +
+        Math.abs(covered[2] - uncovered[2]),
+    ).toBeGreaterThan(30);
+    const beforeFilter = bg?.style.filter;
+    lensEl.style.left = "360px";
+    handle.geometryChanged();
+    expect(hole?.getAttribute("d")).not.toBe(beforeHole);
+    expect(bg?.style.filter).toBe(beforeFilter);
 
     // Fully covered again → hidden.
     lensEl.style.left = "50px";
@@ -433,6 +474,47 @@ describe("browser: media surfaces (WebGL)", () => {
       handle.destroy();
       surface.destroy();
       expect(container.querySelector(".lgm-overlay")).toBeNull();
+    },
+  );
+
+  it.skipIf(!canCreateWebGLGlass())(
+    "stops the live media rAF while hidden and resumes when visible",
+    async () => {
+      let visibility: DocumentVisibilityState = "hidden";
+      const visibilitySpy = vi
+        .spyOn(document, "visibilityState", "get")
+        .mockImplementation(() => visibility);
+      const scope = createGlassScope();
+      const container = document.createElement("div");
+      container.style.cssText =
+        "position:fixed;inset:0;width:64px;height:64px;";
+      const media = createSourceCanvas(64);
+      media.style.cssText = "display:block;width:64px;height:64px;";
+      container.appendChild(media);
+      const lens = document.createElement("div");
+      lens.style.cssText =
+        "position:fixed;left:8px;top:8px;width:32px;height:32px;";
+      document.body.append(container, lens);
+      scope.createMediaSurface(media, { live: true });
+      scope.glass(lens, { background: false });
+      expect(scope.getDiagnostics().mediaRafCallbacks).toBe(0);
+
+      visibility = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+      const running = scope.getDiagnostics().mediaRafCallbacks;
+      expect(running).toBeGreaterThan(0);
+
+      visibility = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+      expect(scope.getDiagnostics().mediaRafCallbacks).toBe(running);
+      scope.destroy();
+      visibilitySpy.mockRestore();
     },
   );
 

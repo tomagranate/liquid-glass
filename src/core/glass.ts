@@ -30,6 +30,7 @@ import {
   paintBackground,
   subscribeBackground,
 } from "./background.js";
+import { backgroundClipPath } from "./composition.js";
 import {
   buildBackdropFilter,
   buildGlassFilter,
@@ -47,6 +48,8 @@ import {
 import { bakeSpecularHighlight, generateDisplacementMap } from "./map.js";
 import { listMediaSurfaces, MediaSurface } from "./media.js";
 import { createPanel, type PanelChrome } from "./panel.js";
+import { chooseGlassPolicy, detectEngine } from "./policy.js";
+import { recordPolicy, type ScopeRuntime } from "./runtime.js";
 import {
   ContentSurface,
   isSafariEngine,
@@ -146,6 +149,8 @@ function resolveMaterial(
     specular: option(opts, "specular"),
     specularAngle: option(opts, "specularAngle"),
     dpr: option(opts, "dpr"),
+    quality: opts.quality ?? "balanced",
+    fallback: opts.fallback ?? "blur",
   };
 }
 
@@ -169,20 +174,6 @@ interface Box {
 function intersects(a: Box, b: Box): boolean {
   return (
     a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom
-  );
-}
-
-function isLocalAutoCandidate(
-  lens: HTMLElement,
-  surface: HTMLElement,
-): boolean {
-  const lensParent = lens.parentElement;
-  const surfaceParent = surface.parentElement;
-  if (!lensParent || !surfaceParent) return false;
-  return (
-    lensParent === surfaceParent ||
-    lensParent.contains(surface) ||
-    surfaceParent.contains(lens)
   );
 }
 
@@ -246,6 +237,7 @@ function documentCanScroll(): boolean {
 export function glass(
   element: HTMLElement,
   options: GlassOptions = {},
+  runtime?: ScopeRuntime,
 ): GlassHandle {
   const opts: GlassOptions = { ...options };
   const panel = createPanel(element);
@@ -290,6 +282,8 @@ export function glass(
   let bgPaintSig = "";
   let bgSubscriber: BackgroundSubscriber | null = null;
   let bgUnsubscribe: (() => void) | null = null;
+  let bgClip: SVGClipPathElement | null = null;
+  let bgClipPath: SVGPathElement | null = null;
 
   // Baked specular overlay state (backdrop tier only; core-created, never
   // adopted). The token discards stale async bakes.
@@ -327,23 +321,50 @@ export function glass(
       option(opts, "dpr"),
     ].join("|");
 
+  function effectiveMaterial(
+    width: number,
+    height: number,
+    desiredBackend: GlassBackend,
+  ): { material: ResolvedLensMaterial; backend: GlassBackend; reason: string } {
+    const material = resolveMaterial(opts, width, height);
+    const decision = chooseGlassPolicy({
+      engine: detectEngine(),
+      desiredBackend,
+      quality: material.quality,
+      fallback: material.fallback,
+      material,
+      width,
+      height,
+      dpr: typeof window === "undefined" ? 1 : window.devicePixelRatio || 1,
+      budgets: runtime?.budgets,
+    });
+    recordPolicy(runtime, decision);
+    return {
+      material: decision.effectiveMaterial,
+      backend: decision.backend,
+      reason: decision.reason,
+    };
+  }
+
   function candidateSurfaces(): { list: AnySurface[]; explicit: boolean } {
     const sel = opts.surfaces;
     if (Array.isArray(sel)) {
       const list = sel.filter(
         (s): s is AnySurface =>
-          s instanceof ContentSurface || s instanceof MediaSurface,
+          (s instanceof ContentSurface || s instanceof MediaSurface) &&
+          (!runtime || s.runtime === runtime),
       );
+      if (runtime && list.length !== sel.length) {
+        console.warn(
+          "liquid-glass: explicit surface belongs to another scope and was ignored.",
+        );
+      }
       return { list, explicit: true };
     }
-    const isAutoSurface = (surface: AnySurface): boolean => {
-      if (surface.kind === "content" && surface.routesGlobally) return true;
-      return isLocalAutoCandidate(element, surface.element);
-    };
     return {
-      list: [...listContentSurfaces(), ...listMediaSurfaces()].filter(
-        isAutoSurface,
-      ),
+      list: runtime
+        ? [...runtime.content, ...runtime.media]
+        : [...listContentSurfaces(), ...listMediaSurfaces()],
       explicit: false,
     };
   }
@@ -368,12 +389,18 @@ export function glass(
     if (destroyed) return;
     const lensRect = getGeometryRect(element);
     const tooSmall = lensRect.width < 2 || lensRect.height < 2;
+    const offscreen =
+      lensRect.right <= 0 ||
+      lensRect.bottom <= 0 ||
+      lensRect.left >= window.innerWidth ||
+      lensRect.top >= window.innerHeight;
+    const inactive = tooSmall || offscreen;
     const next = new Set<AnySurface>();
     const coveringRects: Box[] = [];
     let anyNative = false;
     const backends = new Set<GlassBackend>();
 
-    if (!tooSmall && !backdropEligible()) {
+    if (!inactive && !backdropEligible()) {
       const { list, explicit } = candidateSurfaces();
       for (const surface of list) {
         if (surface.destroyed || next.has(surface)) continue;
@@ -403,7 +430,11 @@ export function glass(
           width: Math.round(lensRect.width),
           height: Math.round(lensRect.height),
         };
-        const material = resolveMaterial(opts, box.width, box.height);
+        const material = effectiveMaterial(
+          box.width,
+          box.height,
+          surface.kind === "content" ? "content-svg" : "media-webgl",
+        ).material;
         if (surface.kind === "content") {
           warnIfFixedLensChasesDocumentScroll(surface);
           surface.attachLens(key, box, material, force);
@@ -437,7 +468,7 @@ export function glass(
       coveringRects,
       anyNative,
       force,
-      tooSmall,
+      inactive,
     );
     if (backgroundBackend) backends.add(backgroundBackend);
     publishBackends(backends);
@@ -468,6 +499,38 @@ export function glass(
     bgFilterSig = "";
     bg.style.filter = "";
     bg.style.removeProperty("-webkit-filter");
+  }
+
+  function clearBgClip(bg?: HTMLElement): void {
+    if (bg) bg.style.clipPath = "";
+    bgClip?.remove();
+    bgClip = null;
+    bgClipPath = null;
+  }
+
+  function syncBgClip(
+    bg: HTMLElement,
+    lensRect: DOMRect,
+    covers: Box[],
+    margin: number,
+  ): void {
+    if (!covers.length) {
+      clearBgClip(bg);
+      return;
+    }
+    if (!bgClip) {
+      const ns = "http://www.w3.org/2000/svg";
+      bgClip = document.createElementNS(ns, "clipPath");
+      bgClip.id = nextId();
+      bgClip.setAttribute("clipPathUnits", "userSpaceOnUse");
+      bgClipPath = document.createElementNS(ns, "path");
+      bgClipPath.setAttribute("fill-rule", "evenodd");
+      bgClipPath.setAttribute("clip-rule", "evenodd");
+      bgClip.appendChild(bgClipPath);
+      getDefs().appendChild(bgClip);
+    }
+    bgClipPath?.setAttribute("d", backgroundClipPath(lensRect, covers, margin));
+    bg.style.clipPath = `url(#${bgClip.id})`;
   }
 
   function unsubscribeBg(): void {
@@ -546,6 +609,7 @@ export function glass(
 
     if (mode === "hidden") {
       unsubscribeBg();
+      clearBgClip(panel.bg ?? undefined);
       if (panel.bg) panel.bg.style.display = "none";
       if (anyNative) return fallback === "none" ? "none" : "native";
       return null;
@@ -559,6 +623,7 @@ export function glass(
       // no painted copy (the real page shows through the blur).
       unsubscribeBg();
       clearBgFilter(bg);
+      clearBgClip(bg);
       bg.style.background = "none";
       bg.style.backgroundImage = "";
       bg.style.backgroundColor = "";
@@ -587,10 +652,22 @@ export function glass(
       bg.style.borderRadius = "inherit";
       bg.style.filter = "";
       bg.style.removeProperty("-webkit-filter");
+      clearBgClip(bg);
 
       const width = Math.round(lensRect.width);
       const height = Math.round(lensRect.height);
-      const material = resolveMaterial(opts, width, height);
+      const decision = effectiveMaterial(width, height, "backdrop");
+      const material = decision.material;
+      if (decision.backend !== "backdrop") {
+        panel.applyChrome(chromeOf(opts, decision.backend === "none"));
+        const nativeFilter =
+          decision.backend === "native" && (opts.fallback ?? "blur") === "blur"
+            ? NATIVE_BACKDROP
+            : "";
+        bg.style.backdropFilter = nativeFilter;
+        bg.style.setProperty("-webkit-backdrop-filter", nativeFilter);
+        return decision.backend;
+      }
       const filterSig = [
         "backdrop",
         width,
@@ -628,6 +705,7 @@ export function glass(
             specular: material.specular,
             specularAngle: material.specularAngle,
           });
+          if (runtime) runtime.diagnostics.mapRegenerations++;
           bgMapSig = mapSig;
         }
         if (bgMapUrl) {
@@ -642,6 +720,7 @@ export function glass(
             chroma: material.chroma,
           });
           getDefs().appendChild(filter);
+          if (runtime) runtime.diagnostics.filterRebuilds++;
           bgFilterEl?.remove();
           bgFilterEl = filter;
           bgFilterSig = filterSig;
@@ -662,13 +741,28 @@ export function glass(
     bg.style.borderRadius = "";
     const width = Math.round(lensRect.width);
     const height = Math.round(lensRect.height);
-    const material = resolveMaterial(opts, width, height);
+    const decision = effectiveMaterial(width, height, "background-copy");
+    const material = decision.material;
+    if (decision.backend !== "background-copy") {
+      panel.applyChrome(chromeOf(opts, decision.backend === "none"));
+      clearBgFilter(bg);
+      clearBgClip(bg);
+      bg.style.background = "none";
+      const nativeFilter =
+        decision.backend === "native" && (opts.fallback ?? "blur") === "blur"
+          ? NATIVE_BACKDROP
+          : "";
+      bg.style.backdropFilter = nativeFilter;
+      bg.style.setProperty("-webkit-backdrop-filter", nativeFilter);
+      return decision.backend;
+    }
     const margin = filterReach(material.scale, material.blur, material.chroma);
     bg.style.width = `${width + 2 * margin}px`;
     bg.style.height = `${height + 2 * margin}px`;
     // translateZ keeps the filtered layer composited on Safari (rule 1); on
     // other engines promotion is harmful (per-frame texture re-uploads).
     bg.style.transform = `translate(${-margin}px, ${-margin}px)${isSafariEngine() ? " translateZ(0)" : ""}`;
+    syncBgClip(bg, lensRect, coveringRects, margin);
 
     const filterSig = [
       width,
@@ -705,6 +799,7 @@ export function glass(
           inset: 1,
           maskAlpha: true,
         });
+        if (runtime) runtime.diagnostics.mapRegenerations++;
         bgMapSig = mapSig;
       }
       if (bgMapUrl) {
@@ -728,6 +823,7 @@ export function glass(
           source: { width: width + 2 * margin, height: height + 2 * margin },
         });
         getDefs().appendChild(filter);
+        if (runtime) runtime.diagnostics.filterRebuilds++;
         bgFilterEl?.remove();
         bgFilterEl = filter;
         bgFilterSig = filterSig;
@@ -742,7 +838,9 @@ export function glass(
       bgSubscriber = {
         element: bg,
         override: () =>
-          typeof opts.background === "string" ? opts.background : null,
+          typeof opts.background === "string"
+            ? opts.background
+            : (runtime?.background ?? null),
       };
       bgUnsubscribe = subscribeBackground(bgSubscriber);
       bgPaintSig = paintSig;
@@ -761,7 +859,10 @@ export function glass(
   let unsubscribeLive: (() => void) | null = null;
   function syncLive(): void {
     if (opts.track === "live" && !unsubscribeLive) {
-      unsubscribeLive = subscribeLive(() => sync(false));
+      unsubscribeLive = subscribeLive(() => {
+        if (runtime) runtime.diagnostics.geometryRafCallbacks++;
+        sync(false);
+      });
     } else if (opts.track !== "live" && unsubscribeLive) {
       unsubscribeLive();
       unsubscribeLive = null;
@@ -777,6 +878,7 @@ export function glass(
   let unsubscribeAutoLive: (() => void) | null = null;
   let autoLiveQuiet = 0;
   function autoLiveTick(): void {
+    if (runtime) runtime.diagnostics.geometryRafCallbacks++;
     sync(false);
     const animating =
       typeof element.getAnimations === "function" &&
@@ -798,7 +900,7 @@ export function glass(
   sync(true);
   syncLive();
 
-  return {
+  const handle: GlassHandle = {
     get backends() {
       return currentBackends;
     },
@@ -832,6 +934,7 @@ export function glass(
       unsubscribeBg();
       bgFilterEl?.remove();
       bgFilterEl = null;
+      clearBgClip(panel.bg ?? undefined);
       removeSpecOverlay();
       if (originalBackendAttribute == null) {
         element.removeAttribute("data-lg-backend");
@@ -839,6 +942,10 @@ export function glass(
         element.setAttribute("data-lg-backend", originalBackendAttribute);
       }
       panel.destroy();
+      if (runtime?.lenses.delete(handle)) runtime.diagnostics.lenses--;
     },
   };
+  runtime?.lenses.add(handle);
+  if (runtime) runtime.diagnostics.lenses++;
+  return handle;
 }

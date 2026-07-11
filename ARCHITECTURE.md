@@ -32,6 +32,12 @@ fall back to a small WebGL shader fed the same displacement (see
 
 The public API has two nouns and a router that connects them.
 
+The router belongs to a `GlassScope`. Top-level functions use a default scope;
+`createGlassScope()` and React `<GlassRoot>` create isolated registries,
+background state, policy defaults, budgets, and diagnostics. Auto routing means
+all geometrically overlapping surfaces in that scope. DOM ancestry is not a
+routing signal, so portals and remote DOM remain deterministic.
+
 - A **lens** is a glass panel: `glass(el)` / `<Glass>`. The library styles its
   chrome and routes its refraction per overlapping surface.
 - A **surface** is a registered pixel source a lens can refract. There are three
@@ -290,8 +296,8 @@ On lens create/update and on every geometry invalidation:
    Rules 1–5 do not run. An explicit CSS-string `background`, or
    `background: false`, falls through to the rules below.
 
-For each candidate surface (all registered surfaces, or the explicit
-`opts.surfaces` list):
+For each candidate surface (all surfaces in the current scope, or the explicit
+same-scope `opts.surfaces` list):
 
 1. **Descendant exclusion.** If the surface contains the lens or the lens
    contains the surface, the pair never registers (filtering would bend the
@@ -303,13 +309,13 @@ For each candidate surface (all registered surfaces, or the explicit
 5. **Background copy** paints iff `background !== false` and the union of
    overlapping content/media surface rects does not fully cover the lens (exact
    coverage via coordinate compression, 1px per-edge tolerance). Fully covered →
-   `.lg-bg` is hidden. Partial overlap has no holes in v0.1 (documented
-   limitation).
-6. **Safari size budget.** On Safari only, a content surface whose
-   `(size + 2·reach) · dpr` exceeds ~2048 device px enters the **native tier**:
-   its SVG filter is removed and every lens over it shows `.lg-bg` with a native
-   `backdrop-filter: blur() saturate()` instead. One console warning with the
-   measured numbers.
+   `.lg-bg` is hidden. Partial overlap uses one reusable even-odd SVG clip path;
+   surface intersections become seam-expanded holes and moves mutate only `d`.
+6. **Runtime policy.** Provisional device-pixel area budgets are 3,000,000 for
+   Chromium, 750,000 for Firefox, and 1,500,000 for WebKit. Quality changes the
+   budget monotonically and caps effective DPR/chroma/specular. WebKit retains
+   its hard 2048 device-pixel dimension. Exceeded work enters the configured
+   fallback tier with a diagnostic reason and effective values.
 
 CSS-only props (`backdrop`, `tint`, `rimLight`, `shadow`) are deliberately
 excluded from the map/filter rebuild signature, so a colour or opacity change

@@ -144,6 +144,7 @@ in `useLayoutEffect`).
 
 | Component / hook | Role |
 | --- | --- |
+| `<GlassRoot quality="balanced">` | Own an isolated registry, background, and policy. Nested roots isolate; portals retain their nearest React scope. |
 | `<Glass as="div" {...material}>` | A lens. Material/option props are peeled off; every other prop spreads onto the host. `as` picks the tag (`"nav"`, `"button"`, …). |
 | `<GlassSurface background>` | Register the subtree as a content surface. |
 | `<GlassMediaSurface live>` | Register the first `<video>`/`<canvas>`/`<img>` descendant as a media surface. |
@@ -206,10 +207,10 @@ optional.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `preset` | `"regular"` | Material starting point: `"thin"`, `"regular"`, or `"prominent"`. Explicit material fields override the preset. |
-| `quality` | `"balanced"` | Performance/fidelity policy: `"performance"`, `"balanced"`, or `"fidelity"`. This is a stable contract; adaptive budgets are introduced incrementally. |
+| `quality` | `"balanced"` | `"performance"` caps DPR at 1 and disables chroma/specular; `"balanced"` caps DPR at 1.5 and adapts costly passes; `"fidelity"` permits DPR 2 within budget. |
 | `fallback` | `"blur"` | Unsupported/over-budget appearance: native `"blur"`, tint-only `"tint"`, or `"none"`. |
 | `onBackendChange` | — | Called only when the stable ordered backend set changes. |
-| `surfaces` | `"auto"` | `"auto"` = refract every registered surface; or an explicit `SurfaceHandle[]`. |
+| `surfaces` | `"auto"` | Refract every geometrically overlapping surface in the current scope, or an explicit same-scope `SurfaceHandle[]`. |
 | `track` | `"auto"` | `"auto"` = event/observer-driven, auto-riding a shared rAF only while a CSS animation runs in the subtree; `"live"` = re-read geometry every frame (JS-animated lenses). |
 | `background` | `"auto"` | The bent background copy behind uncovered lens area. `"auto"` paints it unless a surface fully covers the lens; `false` never paints; a CSS string uses that instead of the page background. |
 
@@ -237,6 +238,19 @@ Register a `<video>`/`<canvas>`/`<img>`. `options.live` (`boolean`) re-uploads
 the source every frame while a lens overlaps it.
 
 `SurfaceHandle` = `{ readonly element, refresh(), destroy() }`.
+
+### `createGlassScope(options?) → GlassScope`
+
+Create an isolated vanilla owner with scoped `glass`, `createSurface`,
+`createMediaSurface`, `setBackground`, `getDiagnostics`, and `destroy` methods.
+Top-level functions use a default singleton. Scope destruction releases every
+lens and surface it owns.
+
+Area thresholds are deliberately **provisional calibration hooks**: 3,000,000
+Chromium, 750,000 Firefox, and 1,500,000 WebKit device pixels. `performance`
+uses 50%; `fidelity` uses 2× except for WebKit's hard 2048 device-pixel filter
+dimension. Override with `budgets`. Diagnostics report policy reasons,
+effective DPR/chroma/specular, and lifecycle/work counters.
 
 ### `setBackground(bg: string | null)`
 
@@ -268,15 +282,14 @@ The library absorbs the things a refraction effect normally pushes onto you:
 - **Descendant exclusion.** A lens that contains a surface (or vice versa) never
   registers against it — filtering would bend the lens's own crisp children — so
   it refracts the background copy instead.
-- **Full-cover hiding.** A lens's background copy is hidden when overlapping
-  surfaces fully cover it (nothing to paint), and painted otherwise.
+- **Overlap composition.** Full cover hides the background copy. Partial cover
+  uses one reusable even-odd SVG clip path; pure moves mutate only path geometry.
 - **Auto-tracked CSS motion.** A lens joins the shared rAF ticker while a CSS
   transition/animation runs in its subtree and leaves it after two quiet frames,
   so sliding switch thumbs and pills need no manual tracking, and an idle page
   keeps the rAF (and its Safari click-latency cost) fully off.
-- **Safari tiering.** Every filtered element is composited; filter regions are
-  minimal; a content surface that exceeds Safari's filter-buffer budget
-  automatically degrades to a native `backdrop-filter` for lenses over it.
+- **Cross-engine budgets.** Provisional device-pixel budgets protect Chromium,
+  Firefox's software displacement path, and WebKit's hard filter dimension.
 - **Chromium zero-lag scrolling.** On Chromium — the one engine that renders SVG
   `url()` filters in `backdrop-filter` — a default (`background: "auto"`) lens is
   refracted by the compositor at composite time instead of a JS-repositioned
@@ -291,11 +304,9 @@ The library absorbs the things a refraction effect normally pushes onto you:
   shape and displacement strength *are* independent (baked per lens into the
   map). This applies to the cross-browser copy/content path; on the Chromium
   backdrop tier each lens owns its filter, so blur and chroma are exact per lens.
-- **No hole-cutting on partial overlap.** A lens's background copy is hidden only
-  on *full* cover; a lens straddling a surface edge has no clip-path holes in
-  v0.1.
 - **Per-lens frost is out of scope** for v0.1.
-- **Nested surfaces are unsupported.**
+- **Nested surfaces are discouraged.** They produce a development warning;
+  bounded siblings have unambiguous filter ownership and budgets.
 
 ## Migrating from v0.0.2
 

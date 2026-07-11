@@ -18,7 +18,6 @@ import {
 } from "./background.js";
 import {
   buildGlassFilter,
-  filterReach,
   getDefs,
   isSafariEngine,
   moveFilterLens,
@@ -26,6 +25,8 @@ import {
 } from "./filter.js";
 import { notifyGeometry } from "./geometry.js";
 import { generateDisplacementMap } from "./map.js";
+import { chooseGlassPolicy, detectEngine } from "./policy.js";
+import { recordPolicy, type ScopeRuntime } from "./runtime.js";
 import type {
   ResolvedLensMaterial,
   SubLens,
@@ -59,6 +60,27 @@ function warnIfSurfaceScrolls(surface: HTMLElement): void {
   ) {
     console.warn(
       "liquid-glass: content surfaces must wrap scrollers; do not put scrollable overflow on the filtered surface element.",
+    );
+  }
+}
+
+function warnIfSurfaceHasDetachedDescendants(surface: HTMLElement): void {
+  const descendants = Array.from(surface.querySelectorAll<HTMLElement>("*"));
+  const risky = descendants.some((element) => {
+    let topLayer =
+      typeof HTMLDialogElement !== "undefined" &&
+      element instanceof HTMLDialogElement &&
+      element.open;
+    try {
+      topLayer ||= element.matches(":popover-open");
+    } catch {
+      // Older selector engines do not know the popover pseudo-class.
+    }
+    return topLayer || getComputedStyle(element).position === "fixed";
+  });
+  if (risky) {
+    console.warn(
+      "liquid-glass: fixed or top-layer descendants escape a filtered content surface; keep them outside the surface scope.",
     );
   }
 }
@@ -102,11 +124,10 @@ export function listContentSurfaces(): ContentSurface[] {
 export class ContentSurface implements SurfaceHandle {
   readonly kind = "content" as const;
   readonly element: HTMLElement;
+  readonly runtime?: ScopeRuntime;
   destroyed = false;
   /** Safari over-budget degrade: no SVG filter; lenses use backdrop-filter. */
   nativeTier = false;
-  /** Whether auto-routed lenses outside the local DOM island should consider it. */
-  readonly routesGlobally: boolean;
 
   private readonly options: SurfaceOptions;
   private readonly attachments = new Map<object, Attachment>();
@@ -124,22 +145,37 @@ export class ContentSurface implements SurfaceHandle {
   private bgSubscriber: BackgroundSubscriber | null = null;
   private unsubscribeBg: (() => void) | null = null;
 
-  constructor(element: HTMLElement, options: SurfaceOptions) {
+  constructor(
+    element: HTMLElement,
+    options: SurfaceOptions,
+    runtime?: ScopeRuntime,
+  ) {
     this.element = element;
+    this.runtime = runtime;
     this.options = options;
     this.originalFilter = element.style.filter;
     this.originalWebkitFilter =
       element.style.getPropertyValue("-webkit-filter");
-    this.routesGlobally =
-      options.routing === "global" ||
-      (options.routing !== "local" && Boolean(options.background));
-
     element.classList.add("lgs-surface");
     // Composited-layer promotion is Safari-only (see liquid-glass.css).
     if (isSafariEngine()) element.classList.add("lg-composited");
     warnIfSurfaceScrolls(element);
+    warnIfSurfaceHasDetachedDescendants(element);
+    const peers = runtime?.content ?? registry;
+    if (
+      Array.from(peers).some(
+        (surface) =>
+          surface.element.contains(element) ||
+          element.contains(surface.element),
+      )
+    ) {
+      console.warn(
+        "liquid-glass: nested content surfaces overlap filter ownership; prefer sibling bounded surfaces.",
+      );
+    }
     this.setupBackground();
-    registry.add(this);
+    peers.add(this);
+    if (runtime) runtime.diagnostics.contentSurfaces++;
     // Let already-mounted lenses discover and route to this surface.
     notifyGeometry("resize");
   }
@@ -159,7 +195,10 @@ export class ContentSurface implements SurfaceHandle {
     if (this.createdBg) this.element.prepend(this.bgEl);
     this.bgSubscriber = {
       element: this.bgEl,
-      override: () => (typeof background === "string" ? background : null),
+      override: () =>
+        typeof background === "string"
+          ? background
+          : (this.runtime?.background ?? null),
     };
     this.unsubscribeBg = subscribeBackground(this.bgSubscriber);
   }
@@ -229,7 +268,49 @@ export class ContentSurface implements SurfaceHandle {
       return;
     }
 
-    const attachments = Array.from(this.attachments.values());
+    const rawAttachments = Array.from(this.attachments.values());
+    const dpr =
+      typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+    const decisions = rawAttachments.map((attachment) =>
+      chooseGlassPolicy({
+        engine: detectEngine(),
+        desiredBackend: "content-svg",
+        quality: attachment.material.quality,
+        fallback: attachment.material.fallback,
+        material: attachment.material,
+        width: sourceWidth,
+        height: sourceHeight,
+        dpr,
+        budgets: this.runtime?.budgets,
+      }),
+    );
+    for (const decision of decisions) recordPolicy(this.runtime, decision);
+    const degraded = decisions.find(
+      (decision) => decision.backend !== "content-svg",
+    );
+    if (degraded) {
+      if (!this.nativeTier) {
+        this.nativeTier = true;
+        this.clearFilter();
+        if (!this.warnedBudget) {
+          this.warnedBudget = true;
+          console.warn(
+            `liquid-glass: content surface exceeds the provisional ${detectEngine()} filter budget (${Math.round(degraded.deviceArea)} device px² > ${Math.round(degraded.provisionalBudget)}; ${degraded.reason}); degrading to fallback.`,
+          );
+        }
+        this.notifyTierChange();
+      }
+      return;
+    }
+    if (this.nativeTier) {
+      this.nativeTier = false;
+      this.notifyTierChange();
+    }
+    const attachments = rawAttachments.map((attachment, index) => ({
+      ...attachment,
+      material: decisions[index].effectiveMaterial,
+      source: attachment,
+    }));
     // Per-lens strength on a shared chain: the chain runs at the strongest
     // lens's scale; weaker lenses bake scale/chainScale into their maps.
     const chainScale = Math.max(...attachments.map((a) => a.material.scale));
@@ -239,18 +320,6 @@ export class ContentSurface implements SurfaceHandle {
     const blur = Math.max(0.4, ...attachments.map((a) => a.material.blur));
     const chroma = Math.max(...attachments.map((a) => a.material.chroma));
     const specular = Math.max(...attachments.map((a) => a.material.specular));
-
-    if (
-      !this.checkSafariBudget(
-        sourceWidth,
-        sourceHeight,
-        chainScale,
-        blur,
-        chroma,
-      )
-    ) {
-      return;
-    }
 
     const lenses: SubLens[] = [];
     for (const a of attachments) {
@@ -279,6 +348,9 @@ export class ContentSurface implements SurfaceHandle {
           maskAlpha: true,
         });
         a.mapSig = mapSig;
+        a.source.mapUrl = a.mapUrl;
+        a.source.mapSig = mapSig;
+        if (this.runtime) this.runtime.diagnostics.mapRegenerations++;
       }
       if (a.mapUrl) {
         lenses.push({
@@ -312,46 +384,7 @@ export class ContentSurface implements SurfaceHandle {
     this.filterId = id;
     this.epsilonFlip = false;
     setWebkitFilter(this.element, filterValue(id, false));
-  }
-
-  /**
-   * Safari filter-region buffer budget (rule 5). Returns false when the
-   * surface entered the native tier (filter removed; lenses over it show a
-   * `backdrop-filter` background instead).
-   */
-  private checkSafariBudget(
-    sourceWidth: number,
-    sourceHeight: number,
-    scale: number,
-    blur: number,
-    chroma: number,
-  ): boolean {
-    if (!isSafariEngine()) return true;
-    const reach = filterReach(scale, blur, chroma);
-    const dpr = window.devicePixelRatio || 1;
-    const budgetX = (sourceWidth + 2 * reach) * dpr;
-    const budgetY = (sourceHeight + 2 * reach) * dpr;
-    const overBudget =
-      budgetX > SAFARI_FILTER_BUDGET || budgetY > SAFARI_FILTER_BUDGET;
-    if (overBudget && !this.nativeTier) {
-      this.nativeTier = true;
-      this.clearFilter();
-      if (!this.warnedBudget) {
-        this.warnedBudget = true;
-        console.warn(
-          `liquid-glass: content surface exceeds the Safari filter budget (${Math.round(budgetX)}x${Math.round(budgetY)} device px > ${SAFARI_FILTER_BUDGET}); degrading to native backdrop-filter for lenses over it.`,
-        );
-      }
-      this.notifyTierChange();
-    } else if (!overBudget && this.nativeTier) {
-      this.nativeTier = false;
-      this.notifyTierChange();
-    }
-    if (this.nativeTier) {
-      this.clearFilter();
-      return false;
-    }
-    return true;
+    if (this.runtime) this.runtime.diagnostics.filterRebuilds++;
   }
 
   private notifyTierChange(): void {
@@ -403,7 +436,8 @@ export class ContentSurface implements SurfaceHandle {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    registry.delete(this);
+    (this.runtime?.content ?? registry).delete(this);
+    if (this.runtime) this.runtime.diagnostics.contentSurfaces--;
     this.attachments.clear();
     this.clearFilter();
     this.element.classList.remove("lgs-surface", "lg-composited");

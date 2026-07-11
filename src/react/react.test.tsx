@@ -1,4 +1,4 @@
-import { act, createRef } from "react";
+import { act, createRef, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   afterAll,
@@ -13,6 +13,7 @@ import {
 import {
   Glass,
   GlassMediaSurface,
+  GlassRoot,
   GlassSurface,
   useGlass,
   useMediaSurface,
@@ -38,10 +39,23 @@ const media = vi.hoisted(() => ({
   refresh: vi.fn(),
   destroy: vi.fn(),
 }));
+const scoped = vi.hoisted(() => ({
+  glass: vi.fn(),
+  createSurface: vi.fn(),
+  createMediaSurface: vi.fn(),
+  setBackground: vi.fn(),
+  getDiagnostics: vi.fn(),
+  destroy: vi.fn(),
+}));
 
-vi.mock("../core/glass.js", () => ({ glass: lens.create }));
-vi.mock("../core/surfaces.js", () => ({ createSurface: surface.create }));
-vi.mock("../core/media.js", () => ({ createMediaSurface: media.create }));
+vi.mock("../core/api.js", () => ({
+  glass: lens.create,
+  createSurface: surface.create,
+  createMediaSurface: media.create,
+}));
+vi.mock("../core/scope.js", () => ({
+  createGlassScope: vi.fn(() => scoped),
+}));
 
 let container: HTMLElement;
 let root: Root;
@@ -71,7 +85,7 @@ describe("react bindings", () => {
   });
 
   beforeEach(() => {
-    for (const g of [lens, surface, media]) {
+    for (const g of [lens, surface, media, scoped]) {
       for (const fn of Object.values(g)) fn.mockReset();
     }
     lens.create.mockImplementation(() => ({
@@ -79,6 +93,13 @@ describe("react bindings", () => {
       geometryChanged: lens.geometryChanged,
       refresh: lens.refresh,
       destroy: lens.destroy,
+    }));
+    scoped.glass.mockImplementation(() => ({
+      update: lens.update,
+      geometryChanged: lens.geometryChanged,
+      refresh: lens.refresh,
+      destroy: lens.destroy,
+      backends: [],
     }));
     surface.create.mockImplementation((element: HTMLElement) => ({
       element,
@@ -128,6 +149,23 @@ describe("react bindings", () => {
     const host = container.firstElementChild as HTMLElement;
     expect(host.tagName).toBe("NAV");
     expect(host.classList.contains("lg")).toBe(true);
+  });
+
+  it("<GlassRoot> routes descendants through its context and cleans up", async () => {
+    render(
+      <StrictMode>
+        <GlassRoot quality="performance">
+          <Glass>scoped</Glass>
+        </GlassRoot>
+      </StrictMode>,
+    );
+    expect(scoped.glass).toHaveBeenCalledTimes(2);
+    expect(lens.create).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(scoped.destroy).not.toHaveBeenCalled();
+    unmount();
+    await Promise.resolve();
+    expect(scoped.destroy).toHaveBeenCalledTimes(1);
   });
 
   it("<Glass> passes options to glass() and spreads DOM props on the host", () => {
@@ -187,7 +225,7 @@ describe("react bindings", () => {
 
   it("<GlassSurface> registers the host and destroys it on unmount", () => {
     render(
-      <GlassSurface background routing="global" className="s">
+      <GlassSurface background className="s">
         <p>content</p>
       </GlassSurface>,
     );
@@ -197,10 +235,7 @@ describe("react bindings", () => {
     expect(host.querySelector("p")?.textContent).toBe("content");
     expect(surface.create).toHaveBeenCalledTimes(1);
     expect(surface.create.mock.calls[0][0]).toBe(host);
-    expect(surface.create.mock.calls[0][1]).toEqual({
-      background: true,
-      routing: "global",
-    });
+    expect(surface.create.mock.calls[0][1]).toEqual({ background: true });
 
     unmount();
     expect(surface.destroy).toHaveBeenCalledTimes(1);

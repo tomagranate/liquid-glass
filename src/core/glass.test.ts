@@ -3,6 +3,7 @@ import { __resetBackground, setBackground } from "./background.js";
 import { glass, unionCovers } from "./glass.js";
 import { bakeSpecularHighlight, generateDisplacementMap } from "./map.js";
 import { createMediaSurface, type MediaSurface } from "./media.js";
+import { createGlassScope } from "./scope.js";
 import { type ContentSurface, createSurface } from "./surfaces.js";
 
 // jsdom has no canvas rasteriser; stand in a deterministic map generator that
@@ -257,7 +258,7 @@ describe("glass routing", () => {
     expect(s2El.style.filter).toBe("");
   });
 
-  it("auto-routing skips unrelated local surfaces but keeps local and global surfaces", () => {
+  it("auto-routes every overlapping surface regardless of DOM island", () => {
     const localIsland = addEl();
     const localSurfaceEl = document.createElement("div");
     localIsland.appendChild(localSurfaceEl);
@@ -271,7 +272,7 @@ describe("glass routing", () => {
     setRect(unrelatedLensEl, { left: 20, top: 20, width: 50, height: 50 });
     const unrelated = glass(unrelatedLensEl);
     cleanups.push(() => unrelated.destroy());
-    expect(localSurfaceEl.style.filter).toBe("");
+    expect(localSurfaceEl.style.filter).toContain("url(");
 
     const siblingLensEl = document.createElement("div");
     localIsland.appendChild(siblingLensEl);
@@ -282,10 +283,109 @@ describe("glass routing", () => {
 
     const globalSurfaceEl = addEl();
     setRect(globalSurfaceEl, { left: 0, top: 0, width: 200, height: 200 });
-    const globalSurface = createSurface(globalSurfaceEl, { routing: "global" });
+    const globalSurface = createSurface(globalSurfaceEl);
     cleanups.push(() => globalSurface.destroy());
     unrelated.geometryChanged();
     expect(globalSurfaceEl.style.filter).toContain("url(");
+  });
+
+  it("isolates scoped auto-routing across remote DOM islands", () => {
+    const first = createGlassScope();
+    const second = createGlassScope();
+    cleanups.push(
+      () => first.destroy(),
+      () => second.destroy(),
+    );
+    const firstSurfaceEl = addEl();
+    const secondSurfaceEl = addEl();
+    setRect(firstSurfaceEl, { left: 0, top: 0, width: 200, height: 200 });
+    setRect(secondSurfaceEl, { left: 0, top: 0, width: 200, height: 200 });
+    first.createSurface(firstSurfaceEl);
+    second.createSurface(secondSurfaceEl);
+    const remotePortalHost = addEl();
+    const lensEl = document.createElement("div");
+    remotePortalHost.appendChild(lensEl);
+    setRect(lensEl, { left: 20, top: 20, width: 50, height: 50 });
+    first.glass(lensEl, { background: false });
+    expect(firstSurfaceEl.style.filter).toContain("url(");
+    expect(secondSurfaceEl.style.filter).toBe("");
+    expect(first.getDiagnostics()).toMatchObject({
+      lenses: 1,
+      contentSurfaces: 1,
+    });
+    first.destroy();
+    expect(firstSurfaceEl.style.filter).toBe("");
+    expect(first.getDiagnostics()).toMatchObject({
+      lenses: 0,
+      contentSurfaces: 0,
+    });
+  });
+
+  it("warns and ignores explicit cross-scope surface handles", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const first = createGlassScope();
+    const second = createGlassScope();
+    cleanups.push(
+      () => first.destroy(),
+      () => second.destroy(),
+    );
+    const surfaceEl = addEl();
+    setRect(surfaceEl, { left: 0, top: 0, width: 200, height: 200 });
+    const foreign = second.createSurface(surfaceEl);
+    const lensEl = addEl();
+    setRect(lensEl, { left: 20, top: 20, width: 50, height: 50 });
+    first.glass(lensEl, { background: false, surfaces: [foreign] });
+    expect(surfaceEl.style.filter).toBe("");
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("belongs to another scope"),
+    );
+  });
+
+  it("moves 32 scoped lenses without rebuilding filters or maps after warmup", () => {
+    const scope = createGlassScope();
+    cleanups.push(() => scope.destroy());
+    const surfaceEl = addEl();
+    setRect(surfaceEl, { left: 0, top: 0, width: 1000, height: 800 });
+    scope.createSurface(surfaceEl);
+    const boxes: Box[] = [];
+    const handles = Array.from({ length: 32 }, (_, index) => {
+      const el = addEl();
+      boxes.push(
+        setRect(el, {
+          left: 10 + (index % 8) * 100,
+          top: 10 + Math.floor(index / 8) * 100,
+          width: 60,
+          height: 30,
+        }),
+      );
+      return scope.glass(el, { background: false, chroma: 0 });
+    });
+    const warm = scope.getDiagnostics();
+    for (let frame = 0; frame < 120; frame++) {
+      handles.forEach((handle, index) => {
+        boxes[index].left += 0.01;
+        handle.geometryChanged();
+      });
+    }
+    const after = scope.getDiagnostics();
+    expect(after.filterRebuilds).toBe(warm.filterRebuilds);
+    expect(after.mapRegenerations).toBe(warm.mapRegenerations);
+    expect(after.geometryRafCallbacks).toBe(0);
+  });
+
+  it("runs zero scoped animation callbacks over two idle seconds", () => {
+    vi.useFakeTimers();
+    const scope = createGlassScope();
+    cleanups.push(() => scope.destroy());
+    const lensEl = addEl();
+    setRect(lensEl, { left: 10, top: 10, width: 80, height: 40 });
+    scope.glass(lensEl, { background: false });
+    const before = scope.getDiagnostics();
+    vi.advanceTimersByTime(2_000);
+    const after = scope.getDiagnostics();
+    expect(after.geometryRafCallbacks).toBe(before.geometryRafCallbacks);
+    expect(after.mediaRafCallbacks).toBe(before.mediaRafCallbacks);
+    vi.useRealTimers();
   });
 
   it("discovers surfaces registered after the lens", () => {
@@ -490,10 +590,10 @@ describe("glass routing", () => {
       expect(surface.nativeTier).toBe(true);
       expect(surfaceEl.style.filter).toBe("");
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining("Safari filter budget"),
+        expect.stringContaining("provisional webkit filter budget"),
       );
       const budgetWarns = warn.mock.calls.filter(([m]) =>
-        String(m).includes("Safari filter budget"),
+        String(m).includes("provisional webkit filter budget"),
       );
       expect(budgetWarns).toHaveLength(1);
 

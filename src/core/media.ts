@@ -12,6 +12,7 @@
 import "./liquid-glass.css";
 import { getGeometryRect, notifyGeometry } from "./geometry.js";
 import { WebGLGlass } from "./liquid-glass-webgl.js";
+import type { ScopeRuntime } from "./runtime.js";
 import type {
   LensSpec,
   MediaSurfaceOptions,
@@ -53,6 +54,7 @@ export function listMediaSurfaces(): MediaSurface[] {
 export class MediaSurface implements SurfaceHandle {
   readonly kind = "media" as const;
   readonly element: HTMLElement;
+  readonly runtime?: ScopeRuntime;
   destroyed = false;
   /** false when WebGL2 is unavailable — the surface is inert/non-covering. */
   active: boolean;
@@ -69,13 +71,31 @@ export class MediaSurface implements SurfaceHandle {
   private readonly parentOriginalPosition: string | null;
   private readonly viewportObserver: IntersectionObserver | null = null;
   private onViewport = true;
+  private readonly onVisibilityChange = (): void => this.syncLoop();
+  private readonly onContextLost = (event: Event): void => {
+    event.preventDefault();
+    this.active = false;
+    this.syncLoop();
+    notifyGeometry("resize");
+  };
+  private readonly onContextRestored = (): void => {
+    this.active = Boolean(this.glassGL);
+    this.uploaded = false;
+    this.applyLenses();
+    notifyGeometry("resize");
+  };
   private readonly onSourceReady = (): void => {
     this.uploaded = false;
     this.applyLenses();
   };
 
-  constructor(media: MediaElement, options: MediaSurfaceOptions) {
+  constructor(
+    media: MediaElement,
+    options: MediaSurfaceOptions,
+    runtime?: ScopeRuntime,
+  ) {
     this.element = media;
+    this.runtime = runtime;
     this.media = media;
     this.live = options.live ?? false;
 
@@ -113,6 +133,8 @@ export class MediaSurface implements SurfaceHandle {
     if (typeof IntersectionObserver !== "undefined") {
       this.viewportObserver = new IntersectionObserver(([entry]) => {
         this.onViewport = entry?.isIntersecting ?? true;
+        this.syncLoop();
+        if (this.onViewport) this.applyLenses();
       });
       this.viewportObserver.observe(media);
     }
@@ -128,9 +150,16 @@ export class MediaSurface implements SurfaceHandle {
 
     media.addEventListener("loadeddata", this.onSourceReady);
     media.addEventListener("load", this.onSourceReady);
+    this.overlay.addEventListener("webglcontextlost", this.onContextLost);
+    this.overlay.addEventListener(
+      "webglcontextrestored",
+      this.onContextRestored,
+    );
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
 
     this.layout();
-    registry.add(this);
+    (runtime?.media ?? registry).add(this);
+    if (runtime) runtime.diagnostics.mediaSurfaces++;
     notifyGeometry("resize");
   }
 
@@ -207,17 +236,21 @@ export class MediaSurface implements SurfaceHandle {
   /** Upload+render loop: only while live, active, and ≥1 lens registered. */
   private syncLoop(): void {
     const shouldRun =
-      this.live && this.active && !this.destroyed && this.attachments.size > 0;
+      this.live &&
+      this.active &&
+      !this.destroyed &&
+      this.attachments.size > 0 &&
+      this.onViewport &&
+      document.visibilityState !== "hidden";
     if (shouldRun && !this.raf) {
       const loop = (): void => {
         if (!this.glassGL) return;
-        if (this.onViewport) {
-          if (sourceReady(this.media)) {
-            this.glassGL.setSource(this.media);
-            this.uploaded = true;
-          }
-          this.glassGL.render();
+        if (this.runtime) this.runtime.diagnostics.mediaRafCallbacks++;
+        if (sourceReady(this.media)) {
+          this.glassGL.setSource(this.media);
+          this.uploaded = true;
         }
+        this.glassGL.render();
         this.raf = requestAnimationFrame(loop);
       };
       this.raf = requestAnimationFrame(loop);
@@ -237,7 +270,8 @@ export class MediaSurface implements SurfaceHandle {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    registry.delete(this);
+    (this.runtime?.media ?? registry).delete(this);
+    if (this.runtime) this.runtime.diagnostics.mediaSurfaces--;
     if (this.raf) {
       cancelAnimationFrame(this.raf);
       this.raf = 0;
@@ -246,6 +280,12 @@ export class MediaSurface implements SurfaceHandle {
     this.viewportObserver?.disconnect();
     this.media.removeEventListener("loadeddata", this.onSourceReady);
     this.media.removeEventListener("load", this.onSourceReady);
+    this.overlay.removeEventListener("webglcontextlost", this.onContextLost);
+    this.overlay.removeEventListener(
+      "webglcontextrestored",
+      this.onContextRestored,
+    );
+    document.removeEventListener("visibilitychange", this.onVisibilityChange);
     this.glassGL?.destroy();
     this.glassGL = null;
     this.overlay.remove();

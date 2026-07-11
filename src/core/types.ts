@@ -112,13 +112,6 @@ export interface SurfaceOptions {
    * filtering. true = auto-detected page background; string = explicit CSS.
    */
   background?: boolean | string;
-  /**
-   * Auto-routing visibility for this surface. `"global"` surfaces are
-   * considered by every auto-routed lens; `"local"` surfaces are considered
-   * only by nearby lenses in the same DOM island. Default `"auto"` treats
-   * background surfaces as global and all other surfaces as local.
-   */
-  routing?: "auto" | "global" | "local";
 }
 
 /** Live handle returned by {@link createSurface} / {@link createMediaSurface}. */
@@ -147,6 +140,51 @@ export interface ResolvedLensMaterial {
   specular: number;
   specularAngle: number;
   dpr: number;
+  quality: GlassQuality;
+  fallback: GlassFallback;
+}
+
+/** Provisional device-pixel area budgets; override after product calibration. */
+export interface GlassBudgets {
+  chromium?: number;
+  firefox?: number;
+  webkit?: number;
+}
+
+/** Defaults inherited by every lens created through a scope. */
+export interface GlassScopeOptions extends GlassOptions {
+  budgets?: GlassBudgets;
+}
+
+/** Stable counters intended for diagnostics and automated invariants. */
+export interface GlassDiagnostics {
+  readonly lenses: number;
+  readonly contentSurfaces: number;
+  readonly mediaSurfaces: number;
+  readonly filterRebuilds: number;
+  readonly mapRegenerations: number;
+  readonly geometryRafCallbacks: number;
+  readonly mediaRafCallbacks: number;
+  readonly policy: readonly {
+    backend: GlassBackend;
+    reason: string;
+    dpr: number;
+    chroma: number;
+    specular: number;
+  }[];
+}
+
+/** Isolated routing/background/runtime owner. */
+export interface GlassScope {
+  glass(element: HTMLElement, options?: GlassOptions): GlassHandle;
+  createSurface(element: HTMLElement, options?: SurfaceOptions): SurfaceHandle;
+  createMediaSurface(
+    media: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
+    options?: MediaSurfaceOptions,
+  ): SurfaceHandle;
+  setBackground(background: string | null): void;
+  getDiagnostics(): GlassDiagnostics;
+  destroy(): void;
 }
 
 /** One movable lens inside a shared content-surface filter. */

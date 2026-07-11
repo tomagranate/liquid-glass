@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildGlassFilter,
   createMediaSurface,
+  createGlassScope,
   createSurface,
   generateDisplacementMap,
   glass,
@@ -15,6 +16,7 @@ describe("public API", () => {
     expect(glass).toBeTypeOf("function");
     expect(createSurface).toBeTypeOf("function");
     expect(createMediaSurface).toBeTypeOf("function");
+    expect(createGlassScope).toBeTypeOf("function");
     expect(setBackground).toBeTypeOf("function");
   });
 

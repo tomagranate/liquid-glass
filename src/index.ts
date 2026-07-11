@@ -22,10 +22,13 @@
  */
 
 // ── Vanilla API ─────────────────────────────────────────────────────────────
-export { glass } from "./core/glass.js";
-export { createSurface } from "./core/surfaces.js";
-export { createMediaSurface } from "./core/media.js";
-export { setBackground } from "./core/background.js";
+export {
+  glass,
+  createSurface,
+  createMediaSurface,
+  setBackground,
+} from "./core/api.js";
+export { createGlassScope } from "./core/scope.js";
 export type {
   GlassBackend,
   GlassFallback,
@@ -34,6 +37,10 @@ export type {
   GlassHandle,
   GlassPreset,
   GlassQuality,
+  GlassBudgets,
+  GlassDiagnostics,
+  GlassScope,
+  GlassScopeOptions,
   SurfaceOptions,
   SurfaceHandle,
   MediaSurfaceOptions,
