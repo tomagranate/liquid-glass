@@ -376,6 +376,52 @@ describe("browser: aggregate background-copy policy", () => {
   });
 });
 
+describe("browser: mixed fallback diagnostics", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    document.body.style.cssText = "";
+  });
+
+  it.skipIf(!canCreateWebGLGlass())(
+    "retains the native content-surface reason beside media and background routing",
+    () => {
+      document.body.style.cssText = "margin:0;overflow:hidden;";
+      const scope = createGlassScope({ quality: "balanced", fallback: "blur" });
+      const surfaceEl = document.createElement("main");
+      surfaceEl.style.cssText =
+        "position:fixed;left:0;top:0;width:3000px;height:500px;background:linear-gradient(90deg,#f64,#35f);";
+      const mediaEl = createSourceCanvas(64);
+      mediaEl.style.cssText =
+        "position:fixed;left:40px;top:40px;width:160px;height:90px;";
+      const lensEl = document.createElement("button");
+      lensEl.style.cssText =
+        "position:fixed;left:50px;top:50px;width:100px;height:50px;";
+      document.body.append(surfaceEl, mediaEl, lensEl);
+      const content = scope.createSurface(surfaceEl);
+      const media = scope.createMediaSurface(mediaEl);
+      const lens = scope.glass(lensEl, {
+        background: "linear-gradient(135deg,#f64,#35f)",
+        surfaces: [content, media],
+      });
+
+      for (let index = 0; index < 60; index++) lens.geometryChanged();
+      if (isSafariEngine()) expect(lens.backends).toContain("native");
+      if (lens.backends.includes("native")) {
+        const policy = scope.getDiagnostics().policy;
+        expect(policy[policy.length - 1]).toMatchObject({
+          backend: "native",
+        });
+        expect(
+          policy[policy.length - 1]?.reason === "webkit-hard-dimension" ||
+            policy[policy.length - 1]?.reason === "provisional-area-budget",
+        ).toBe(true);
+      }
+      expect(lens.backends).toContain("media-webgl");
+      scope.destroy();
+    },
+  );
+});
+
 describe("browser: background copy (.lg-bg)", () => {
   beforeEach(stubOutBackdropTier);
   afterEach(() => {

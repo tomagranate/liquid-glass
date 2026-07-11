@@ -617,6 +617,32 @@ describe("glass routing", () => {
       warn.mockRestore();
     });
 
+    it("keeps a visible surface fallback reason observable during repeated routing", () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const scope = createGlassScope();
+      cleanups.push(() => scope.destroy());
+      const surfaceEl = addEl();
+      setRect(surfaceEl, { left: 0, top: 0, width: 3000, height: 500 });
+      scope.createSurface(surfaceEl);
+
+      const lensEl = addEl();
+      setRect(lensEl, { left: 50, top: 50, width: 100, height: 50 });
+      const handle = scope.glass(lensEl, {
+        background: "linear-gradient(135deg,#f64,#35f)",
+      });
+      expect(handle.backends).toContain("native");
+
+      // Model a long mixed-scene scroll. Per-lens within-budget decisions used
+      // to evict the still-visible surface fallback from the bounded history.
+      for (let index = 0; index < 60; index++) handle.geometryChanged();
+      const policy = scope.getDiagnostics().policy;
+      expect(policy[policy.length - 1]).toMatchObject({
+        backend: "native",
+        reason: "webkit-hard-dimension",
+      });
+      expect(policy).toHaveLength(50);
+    });
+
     it("honors tint and none fallbacks for an over-budget surface", () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       const surfaceEl = addEl();

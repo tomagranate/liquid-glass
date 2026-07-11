@@ -48,7 +48,11 @@ import {
 import { bakeSpecularHighlight, generateDisplacementMap } from "./map.js";
 import { listMediaSurfaces, MediaSurface } from "./media.js";
 import { createPanel, type PanelChrome } from "./panel.js";
-import { chooseGlassPolicy, detectEngine } from "./policy.js";
+import {
+  chooseGlassPolicy,
+  detectEngine,
+  type PolicyDecision,
+} from "./policy.js";
 import {
   recordPolicy,
   type ScopeRuntime,
@@ -471,7 +475,7 @@ export function glass(
     }
     const next = new Set<AnySurface>();
     const coveringRects: Box[] = [];
-    let anyNative = false;
+    let nativePolicy: PolicyDecision | null = null;
     const backends = new Set<GlassBackend>();
 
     if (!inactive && !backdropEligible()) {
@@ -512,8 +516,9 @@ export function glass(
         if (surface.kind === "content") {
           warnIfFixedLensChasesDocumentScroll(surface);
           surface.attachLens(key, box, material, force);
-          if (surface.nativeTier) anyNative = true;
-          else {
+          if (surface.nativeTier) {
+            nativePolicy ??= surface.fallbackDecision;
+          } else {
             coveringRects.push(surfaceRect);
             backends.add("content-svg");
           }
@@ -540,7 +545,7 @@ export function glass(
     const backgroundBackend = updateBg(
       lensRect,
       coveringRects,
-      anyNative,
+      nativePolicy,
       force,
       inactive,
     );
@@ -661,12 +666,13 @@ export function glass(
   function updateBg(
     lensRect: DOMRect,
     coveringRects: Box[],
-    anyNative: boolean,
+    nativePolicy: PolicyDecision | null,
     force: boolean,
     tooSmall: boolean,
   ): GlassBackend | null {
     const bgOpt = opts.background ?? "auto";
     const fallback = opts.fallback ?? "blur";
+    const anyNative = nativePolicy !== null;
     let mode: "hidden" | "native" | "backdrop" | "paint";
     if (tooSmall) mode = "hidden";
     else if (anyNative && fallback === "blur") mode = "native";
@@ -715,6 +721,16 @@ export function glass(
 
     if (mode !== "backdrop") removeSpecOverlay();
     panel.applyChrome(chromeOf(opts, anyNative && fallback === "none"));
+
+    // A content surface's native tier persists without rebuilding while its
+    // lenses move. Re-record that active decision at the contributing lens so
+    // bounded policy history cannot evict the explanation for visible output.
+    if (nativePolicy) {
+      recordPolicy(runtime, {
+        ...nativePolicy,
+        backend: fallback === "none" ? "none" : "native",
+      });
+    }
 
     if (mode === "hidden") {
       unsubscribeBg();

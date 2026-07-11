@@ -25,7 +25,11 @@ import {
 } from "./filter.js";
 import { notifyGeometry } from "./geometry.js";
 import { generateDisplacementMap } from "./map.js";
-import { chooseGlassPolicy, detectEngine } from "./policy.js";
+import {
+  chooseGlassPolicy,
+  detectEngine,
+  type PolicyDecision,
+} from "./policy.js";
 import { recordPolicy, type ScopeRuntime } from "./runtime.js";
 import type {
   ResolvedLensMaterial,
@@ -128,6 +132,8 @@ export class ContentSurface implements SurfaceHandle {
   destroyed = false;
   /** Safari over-budget degrade: no SVG filter; lenses use backdrop-filter. */
   nativeTier = false;
+  /** Active surface-wide degradation decision, retained while nativeTier is visible. */
+  fallbackDecision: PolicyDecision | null = null;
 
   private readonly options: SurfaceOptions;
   private readonly attachments = new Map<object, Attachment>();
@@ -246,7 +252,11 @@ export class ContentSurface implements SurfaceHandle {
     if (!this.attachments.delete(key)) return;
     if (this.destroyed) return;
     if (this.attachments.size) this.rebuild(false);
-    else this.clearFilter();
+    else {
+      this.fallbackDecision = null;
+      this.nativeTier = false;
+      this.clearFilter();
+    }
   }
 
   hasLens(key: object): boolean {
@@ -257,6 +267,8 @@ export class ContentSurface implements SurfaceHandle {
   private rebuild(force: boolean): void {
     if (this.destroyed) return;
     if (!this.attachments.size) {
+      this.fallbackDecision = null;
+      this.nativeTier = false;
       this.clearFilter();
       return;
     }
@@ -264,6 +276,8 @@ export class ContentSurface implements SurfaceHandle {
     const sourceWidth = Math.round(surfaceRect.width);
     const sourceHeight = Math.round(surfaceRect.height);
     if (sourceWidth < 2 || sourceHeight < 2) {
+      this.fallbackDecision = null;
+      this.nativeTier = false;
       this.clearFilter();
       return;
     }
@@ -289,6 +303,7 @@ export class ContentSurface implements SurfaceHandle {
       (decision) => decision.backend !== "content-svg",
     );
     if (degraded) {
+      this.fallbackDecision = degraded;
       if (!this.nativeTier) {
         this.nativeTier = true;
         this.clearFilter();
@@ -302,6 +317,7 @@ export class ContentSurface implements SurfaceHandle {
       }
       return;
     }
+    this.fallbackDecision = null;
     if (this.nativeTier) {
       this.nativeTier = false;
       this.notifyTierChange();
@@ -439,6 +455,8 @@ export class ContentSurface implements SurfaceHandle {
     (this.runtime?.content ?? registry).delete(this);
     if (this.runtime) this.runtime.diagnostics.contentSurfaces--;
     this.attachments.clear();
+    this.fallbackDecision = null;
+    this.nativeTier = false;
     this.clearFilter();
     this.element.classList.remove("lgs-surface", "lg-composited");
     this.unsubscribeBg?.();
