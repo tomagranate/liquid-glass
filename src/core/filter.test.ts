@@ -260,7 +260,34 @@ describe("buildGlassFilter", () => {
 });
 
 describe("buildBackdropFilter", () => {
-  it("builds the probe-verified single-lens backdrop chain", () => {
+  it("expands the sampling region and neutralizes displacement beyond the lens map", () => {
+    const f = buildBackdropFilter({
+      id: "safe-edge",
+      width: 200,
+      height: 100,
+      mapUrl: "data:image/png,map",
+      scale: 50,
+      blur: 2,
+      chroma: 0,
+    });
+
+    expect(f.getAttribute("x")).toBe("-56");
+    expect(f.getAttribute("y")).toBe("-56");
+    expect(f.getAttribute("width")).toBe("312");
+    expect(f.getAttribute("height")).toBe("212");
+    expect(f.getAttribute("primitiveUnits")).toBe("userSpaceOnUse");
+    expect(f.querySelector("feFlood")?.getAttribute("flood-color")).toBe(
+      "rgb(128,128,128)",
+    );
+    const map = Array.from(f.querySelectorAll("feMerge")).find(
+      (node) => node.getAttribute("result") === "map",
+    );
+    expect(
+      Array.from(map?.children ?? []).map((node) => node.getAttribute("in")),
+    ).toEqual(["backdropField", "backdropMap"]);
+  });
+
+  it("builds the single-lens backdrop chain over the expanded neutral map", () => {
     const f = buildBackdropFilter({
       id: "bd1",
       width: 120,
@@ -269,26 +296,30 @@ describe("buildBackdropFilter", () => {
       scale: 40,
     });
     expect(f.getAttribute("filterUnits")).toBe("userSpaceOnUse");
-    expect(f.getAttribute("x")).toBe("0");
-    expect(f.getAttribute("y")).toBe("0");
-    expect(f.getAttribute("width")).toBe("120");
-    expect(f.getAttribute("height")).toBe("60");
+    expect(f.getAttribute("x")).toBe("-40");
+    expect(f.getAttribute("y")).toBe("-40");
+    expect(f.getAttribute("width")).toBe("200");
+    expect(f.getAttribute("height")).toBe("140");
 
     const map = f.querySelector("feImage");
-    expect(map?.getAttribute("result")).toBe("map");
+    expect(map?.getAttribute("result")).toBe("backdropMap");
     expect(map?.getAttribute("href")).toBe("data:image/png,m");
     expect(map?.getAttribute("width")).toBe("120");
     expect(map?.getAttribute("height")).toBe("60");
     expect(map?.getAttribute("preserveAspectRatio")).toBe("none");
 
-    // No neutral field and no silhouette compositing on this tier: the map
-    // covers the whole border box, so the displacement is the output.
-    expect(f.querySelector("feFlood")).toBeNull();
+    // No silhouette compositing on this tier: the map covers the whole border
+    // box, and neutral gray fills only the expanded sampling region.
+    expect(f.querySelector("feFlood")).toBeTruthy();
     const disp = f.querySelector("feDisplacementMap");
     expect(disp?.getAttribute("in")).toBe("SourceGraphic");
     expect(disp?.getAttribute("in2")).toBe("map");
     expect(disp?.getAttribute("scale")).toBe("40");
-    expect(f.lastElementChild).toBe(disp);
+    const clip = f.lastElementChild;
+    expect(clip?.localName).toBe("feComposite");
+    expect(clip?.getAttribute("in")).toBe("lens");
+    expect(clip?.getAttribute("in2")).toBe("SourceGraphic");
+    expect(clip?.getAttribute("operator")).toBe("in");
   });
 
   it("includes the lens's own blur and chroma in the chain", () => {

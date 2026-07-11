@@ -383,9 +383,11 @@ export interface BackdropFilterOptions {
  * tier. SourceGraphic is the live backdrop, sampled by the compositor at
  * composite time — zero scroll lag by construction. Unlike
  * {@link buildGlassFilter} there is no neutral field or silhouette
- * compositing: the map covers the whole border box (the host's rounded
- * overflow clip shapes the output) and the region matches it exactly, the
- * shape verified to render on Chromium. The chain is kept as lean as the
+ * compositing: the map covers the whole border box and the host's rounded
+ * overflow clip shapes the output. The filter region includes the chain's
+ * sampling reach so rim displacement never reads transparent pixels beyond
+ * the source, while a neutral field keeps the expanded map area at zero bend.
+ * The chain is kept as lean as the
  * per-frame re-filtering demands: chroma is area-adaptive, and specular is
  * baked into a static overlay (`bakeSpecularHighlight`) instead of running
  * in-chain.
@@ -394,15 +396,26 @@ export function buildBackdropFilter(
   o: BackdropFilterOptions,
 ): SVGFilterElement {
   const { id, width, height, mapUrl, scale, blur = 0, chroma = 0 } = o;
+  const effectiveChroma =
+    width * height > BACKDROP_CHROMA_AREA_LIMIT ? 0 : chroma;
+  const reach = filterReach(scale, blur, effectiveChroma);
   const filter = svgEl("filter", {
     id,
     filterUnits: "userSpaceOnUse",
+    primitiveUnits: "userSpaceOnUse",
     "color-interpolation-filters": "sRGB",
-    x: "0",
-    y: "0",
-    width: String(width),
-    height: String(height),
+    x: String(-reach),
+    y: String(-reach),
+    width: String(width + 2 * reach),
+    height: String(height + 2 * reach),
   });
+  filter.appendChild(
+    svgEl("feFlood", {
+      "flood-color": "rgb(128,128,128)",
+      "flood-opacity": "1",
+      result: "backdropField",
+    }),
+  );
   filter.appendChild(
     svgEl("feImage", {
       href: mapUrl,
@@ -411,15 +424,30 @@ export function buildBackdropFilter(
       y: "0",
       width: String(width),
       height: String(height),
-      result: "map",
+      result: "backdropMap",
     }),
   );
-  appendGlassChain(filter, {
+  const map = svgEl("feMerge", { result: "map" });
+  map.appendChild(svgEl("feMergeNode", { in: "backdropField" }));
+  map.appendChild(svgEl("feMergeNode", { in: "backdropMap" }));
+  filter.appendChild(map);
+  const bent = appendGlassChain(filter, {
     scale,
     blur,
-    chroma: width * height > BACKDROP_CHROMA_AREA_LIMIT ? 0 : chroma,
+    chroma: effectiveChroma,
     specular: 0,
   });
+  // Chromium does not reliably clip an expanded backdrop-filter region to the
+  // CSS host before compositing. Clip the bent result back to the backdrop
+  // input's alpha here; the host border-radius then provides the final rounded
+  // silhouette without allowing displaced pixels to leak outside the box.
+  filter.appendChild(
+    svgEl("feComposite", {
+      in: bent,
+      in2: "SourceGraphic",
+      operator: "in",
+    }),
+  );
   return filter;
 }
 
