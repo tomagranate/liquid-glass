@@ -15,6 +15,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
     "./styles.css": "./dist/index.css",
     "./package.json": "./package.json"
   },
@@ -31,9 +36,11 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "npm run test:unit && npm run test:browser",
-    "test:unit": "vitest run --exclude 'src/**/*.browser.test.ts' --exclude 'src/**/*.browser.test.tsx'",
-    "pretest:browser": "playwright install chromium",
-    "test:browser": "vitest run --browser.enabled src/core/liquid-glass.browser.test.ts",
+    "test:unit": "vitest run --exclude '**/*.browser.test.ts' --exclude '**/*.browser.test.tsx'",
+    "pretest:browser": "playwright install chromium firefox webkit",
+    "test:browser": "vitest run --browser.enabled src/core/glass.browser.test.ts",
+    "test:package": "npm run build && node scripts/test-package.mjs",
+    "safari-check": "scripts/safari-check",
     "test:watch": "vitest",
     "prepublishOnly": "npm run clean && npm run build"
   },
@@ -64,6 +71,14 @@
   "peerDependencies": {
     "react": ">=18",
     "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.11",

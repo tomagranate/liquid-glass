@@ -7,43 +7,47 @@
  * pixels are the ones moving, so it works in every browser with a plain
  * `filter: url(#glass)`.
  *
- * - SVG engine ({@link applyGlass} / {@link createGlassController}):
- *   framework-independent, cross-browser. The recommended default.
- * - React bindings: {@link useGlass} drives the SVG engine from a component;
- *   {@link useGlassTexture} drives {@link WebGLGlass} for surfaces SVG filters
- *   can't read (a `<canvas>` QR code, a playing `<video>`). Import the stylesheet
- *   once: `import "@tomagranate/liquid-glass/styles.css"`.
+ * One call per glass panel — {@link glass} — works
+ * with zero configuration over any page, and gets better when the page
+ * registers surfaces:
  *
- * Pre-styled components (button, panel, draggable lens, dock, switch, slider,
- * toggle, rain, video player) are not shipped — see `examples/demo/src/glass`
- * for reference implementations you can copy and restyle.
+ * - {@link createSurface} registers a live DOM subtree; lenses bend its
+ *   pixels in place (content stays selectable and clickable).
+ * - {@link createMediaSurface} registers a `<video>`/`<canvas>`/`<img>`;
+ *   lenses refract it through a WebGL overlay.
+ * - The page background is detected automatically from `document.body`
+ *   (override with {@link setBackground}).
+ *
+ * Import the stylesheet once: `import "@tomagranate/liquid-glass/styles.css"`.
  */
 
-// ── React bindings ──────────────────────────────────────────────────────────
-export { useGlass } from "./react/useGlass.js";
-export type { UseGlassResult } from "./react/useGlass.js";
-export { useGlassTexture } from "./react/useGlassTexture.js";
-export type { UseGlassTextureParams } from "./react/useGlassTexture.js";
-
-// ── Core: SVG `feDisplacementMap` engine ────────────────────────────────────
-export {
-  applyGlass,
-  createGlassController,
-  generateDisplacementMap,
-  buildGlassFilter,
-  moveFilterLens,
-} from "./core/liquid-glass.js";
+// ── Vanilla API ─────────────────────────────────────────────────────────────
+export { glass } from "./core/glass.js";
+export { createSurface } from "./core/surfaces.js";
+export { createMediaSurface } from "./core/media.js";
+export { setBackground } from "./core/background.js";
 export type {
+  GlassBackend,
+  GlassFallback,
+  GlassMaterial,
   GlassOptions,
-  GlassController,
-  GlassLayers,
-  AlignTo,
-  DisplacementMapOptions,
-  GlassFilterOptions,
-} from "./core/liquid-glass.js";
+  GlassHandle,
+  GlassPreset,
+  GlassQuality,
+  SurfaceOptions,
+  SurfaceHandle,
+  MediaSurfaceOptions,
+} from "./core/types.js";
 
-// ── Core: WebGL texture backend (canvas / video) ────────────────────────────
+// ── Low-level building blocks ───────────────────────────────────────────────
+export { generateDisplacementMap } from "./core/map.js";
+export type { DisplacementMapOptions } from "./core/map.js";
+export { buildGlassFilter, moveFilterLens } from "./core/filter.js";
+export type { GlassFilterOptions } from "./core/filter.js";
 export { WebGLGlass } from "./core/liquid-glass-webgl.js";
-
-// ── Shared types ────────────────────────────────────────────────────────────
-export type { LensMaterial, LensRect, LensSpec } from "./core/types.js";
+export type {
+  SubLens,
+  LensMaterial,
+  LensRect,
+  LensSpec,
+} from "./core/types.js";

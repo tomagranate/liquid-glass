@@ -1,28 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyGlass,
   buildGlassFilter,
-  createGlassController,
+  createMediaSurface,
+  createSurface,
   generateDisplacementMap,
-  useGlass,
-  useGlassTexture,
+  glass,
+  moveFilterLens,
+  setBackground,
   WebGLGlass,
 } from "./index.js";
 
 describe("public API", () => {
-  it("exports the React bindings", () => {
-    expect(useGlass).toBeTypeOf("function");
-    expect(useGlassTexture).toBeTypeOf("function");
+  it("exports the vanilla surface × lens API", () => {
+    expect(glass).toBeTypeOf("function");
+    expect(createSurface).toBeTypeOf("function");
+    expect(createMediaSurface).toBeTypeOf("function");
+    expect(setBackground).toBeTypeOf("function");
   });
 
-  it("exports the SVG `feDisplacementMap` engine", () => {
-    expect(applyGlass).toBeTypeOf("function");
-    expect(createGlassController).toBeTypeOf("function");
+  it("exports the low-level building blocks", () => {
     expect(generateDisplacementMap).toBeTypeOf("function");
     expect(buildGlassFilter).toBeTypeOf("function");
-  });
-
-  it("exports the WebGL texture backend", () => {
+    expect(moveFilterLens).toBeTypeOf("function");
     expect(WebGLGlass).toBeTypeOf("function");
   });
 });

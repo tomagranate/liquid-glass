@@ -5,15 +5,6 @@
     sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 
-  /* Set from JS to the active wallpaper; the glass engine refracts this. */
-  --lq-backdrop: url("/wallpapers/amber.webp");
-  /* Demo wallpapers are 3:2. Use the same viewport cover box everywhere the
-     wallpaper is copied, so mobile screens crop instead of squashing. */
-  --lq-cover-width: max(100vw, 150vh);
-  --lq-cover-height: max(66.6667vw, 100vh);
-  --lq-cover-x: calc((100vw - var(--lq-cover-width)) / 2);
-  --lq-cover-y: calc((100vh - var(--lq-cover-height)) / 2);
-
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -24,36 +15,63 @@ html,
 body,
 #root {
   margin: 0;
-  min-height: 100%;
+  width: 100%;
+  height: 100%;
 }
 body {
   color: #fff;
+  /* The active wallpaper is set here from JS per switch; the library reads it
+     off document.body (setBackground(null)) and cover-fits its own copies. */
   background-color: #201004;
-  background-image: var(--lq-backdrop);
-  /* Glue the background to the viewport, cover-fitted without distortion. The
-     glass copies use the same CSS variables to stay registered with it. */
+  background-image: url("/wallpapers/amber.webp");
   background-attachment: fixed;
   background-repeat: no-repeat;
-  background-size: var(--lq-cover-width) var(--lq-cover-height);
-  background-position: var(--lq-cover-x) var(--lq-cover-y);
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
 }
 
 a {
   color: inherit;
 }
 
-/* Marker for content that rides above a glass surface's refraction/sheen. */
-.glass-fg {
-  position: relative;
-  z-index: 2;
+.app-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
 }
 
-/* A flat, inert duplicate of the page rendered inside a glass surface's
-   backdrop layer (see glass/flat.ts). Sized by the engine to the real page. */
-.page-copy {
-  position: relative;
-  width: 100%;
+/* The page surface (GlassSurface) — a fixed, non-scrolling registered surface.
+   The library paints the cover-fit background copy into it and bends its
+   content in place under every overlay lens. It must NOT be the scroller
+   itself (Safari rule); the scroller lives inside it. */
+.app-surface {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.app-scroller {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Chrome (nav, draggable lens, wallpaper switcher) rendered as a sibling of the
+   surface so it refracts the live page. Transparent to pointer events except
+   over its own interactive children. */
+.overlay-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
   pointer-events: none;
+}
+.overlay-layer > * {
+  pointer-events: auto;
 }
 
 .shell {
@@ -202,10 +220,12 @@ a {
   border-color: rgba(255, 255, 255, 0.3);
   color: #fff;
 }
+/* Fixed in the overlay layer (a sibling of the surface), so it refracts the
+   live page in place as it scrolls beneath. */
 .hero-lens {
-  position: absolute;
-  right: 4%;
-  top: 200px;
+  position: fixed;
+  right: 6%;
+  top: 180px;
   z-index: 5;
 }
 @media (max-width: 920px) {
@@ -213,11 +233,9 @@ a {
     padding-top: 140px;
   }
   .hero-lens {
-    position: relative;
-    right: auto;
     top: auto;
-    margin: 56px auto 0;
-    display: block;
+    bottom: 90px;
+    right: calc(50% - 100px);
   }
 }
 
@@ -453,14 +471,10 @@ a {
 .specimen {
   width: min(320px, 100%);
   height: 190px;
-}
-.specimen.glassx-flat {
-  border-radius: 32px;
-}
-.specimen-label {
   display: grid;
   place-items: center;
-  height: 100%;
+}
+.specimen-label {
   font-size: 17px;
   font-weight: 620;
   letter-spacing: -0.01em;

@@ -1,19 +1,12 @@
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   BoltIcon,
   CheckIcon,
   ClipboardIcon,
   FireIcon,
   MoonIcon,
-  SunIcon,
   SpeakerWaveIcon,
+  SunIcon,
   WifiIcon,
 } from "@heroicons/react/16/solid";
 import {
@@ -27,9 +20,9 @@ import {
   ChatBubbleOvalLeftEllipsisIcon,
   EnvelopeIcon,
 } from "@heroicons/react/24/solid";
-import { useGlass } from "@tomagranate/liquid-glass";
-import { GlassCopyContext } from "./glass/flat.ts";
-import { useCopyWallpaper } from "./glass/useCopyWallpaper.ts";
+import { Glass, GlassSurface, useGlass } from "@tomagranate/liquid-glass/react";
+import { setBackground } from "@tomagranate/liquid-glass";
+import { CodeBlock } from "./CodeBlock.jsx";
 import {
   GlassButton,
   GlassDock,
@@ -71,12 +64,125 @@ const WALLPAPERS = [
   },
 ];
 
+/* ── Scene code samples (kept in sync with the components they describe) ───── */
+
+const HERO_CODE = [
+  {
+    label: "React",
+    lang: "jsx",
+    code: `import { Glass, GlassSurface } from "@tomagranate/liquid-glass/react";
+
+// One surface wraps the scroller — every lens over it refracts live content.
+<GlassSurface background>
+  <main>{page}</main>
+</GlassSurface>
+
+// Chrome and a draggable lens render in a sibling overlay, so they bend the
+// page in place as it scrolls beneath them:
+<Glass as="nav">{links}</Glass>
+<Glass radius="50%" onPointerMove={drag} />  // drag calls geometryChanged()`,
+  },
+  {
+    label: "Vanilla",
+    lang: "js",
+    code: `import { glass, createSurface, setBackground } from "@tomagranate/liquid-glass";
+
+setBackground(null);                            // auto-detect document.body
+createSurface(document.querySelector("main"));  // content bends in place
+glass(lensEl, { radius: "50%" });`,
+  },
+];
+
+const DOCK_CODE = `import { Glass } from "@tomagranate/liquid-glass/react";
+
+// One glass slab; the icons ride on top and stay crisp and clickable.
+<Glass className="dock" radius={32} scale={84} chroma={0.55}>
+  {apps.map((app) => (
+    <button key={app.id} aria-label={app.label}>{app.icon}</button>
+  ))}
+</Glass>`;
+
+const SLIDER_CODE = `import { useGlass, useSurface } from "@tomagranate/liquid-glass/react";
+
+function Slider({ value, onChange }) {
+  const track = useRef(null);
+  const thumb = useRef(null);
+  useSurface(track);                          // the filled bar bends in place
+  const lens = useGlass(thumb, { radius: 999 });
+  useLayoutEffect(() => lens?.geometryChanged(), [value]);
+  return (
+    <div className="slider">
+      <div ref={track} className="track">
+        <div className="fill" style={{ width: \`\${value}%\` }} />
+      </div>
+      <div ref={thumb} className="thumb" style={{ left: \`\${value}%\` }} />
+    </div>
+  );
+}`;
+
+const SWITCH_CODE = `import { useGlass, useSurface } from "@tomagranate/liquid-glass/react";
+
+function Switch({ on, onChange }) {
+  const track = useRef(null);
+  const thumb = useRef(null);
+  useSurface(track);                          // track color bends under the thumb
+  useGlass(thumb, { radius: 999 });           // CSS slide is tracked automatically
+  return (
+    <div data-on={on} role="switch" onClick={() => onChange(!on)}>
+      <span ref={track} className="track" />
+      <div ref={thumb} className="thumb" />
+    </div>
+  );
+}`;
+
+const VIDEO_CODE = [
+  {
+    label: "React",
+    lang: "jsx",
+    code: `import { Glass, GlassMediaSurface } from "@tomagranate/liquid-glass/react";
+
+// SVG filters can't sample video; the media surface uses a WebGL backend.
+<GlassMediaSurface live>
+  <video src="/coast.mp4" muted loop playsInline />
+  <Glass as="button" radius="50%">{playIcon}</Glass>
+</GlassMediaSurface>`,
+  },
+  {
+    label: "Vanilla",
+    lang: "js",
+    code: `import { createMediaSurface, glass } from "@tomagranate/liquid-glass";
+
+createMediaSurface(videoEl, { live: true });
+glass(playButton, { radius: "50%", chroma: 0.7 });`,
+  },
+];
+
+const SHOCKWAVE_CODE = `// Low-level API: drive the WebGL2 displacement shader yourself — no surface
+// and no glass() call. The fragment shader bends the field texture along a
+// ring that expands from the tap point.
+const gl = canvas.getContext("webgl2");
+uploadTexture(gl, fieldCanvas);
+
+function frame(now) {
+  gl.uniform1f(uRadius, ringRadius(now));
+  gl.uniform1f(uStrength, ringStrength(now));
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  requestAnimationFrame(frame);
+}`;
+
+const PLAYGROUND_CODE = `import { useGlass } from "@tomagranate/liquid-glass/react";
+
+function Specimen({ material }) {
+  const ref = useRef(null);
+  const handle = useGlass(ref, { radius: 32 });
+  // Material tweaks are a cheap patch — no re-create, no filter rebuild.
+  useEffect(() => handle?.update(material), [handle, material]);
+  return <div ref={ref} className="specimen">Specimen</div>;
+}`;
+
 export default function App() {
   const [wallpaper, setWallpaper] = useState(WALLPAPERS[2]);
 
-  // All interactive demo state lives here: it survives the wallpaper remount,
-  // and — because the nav and lens each render a second copy of the scenes —
-  // passing the same props to every copy keeps them in sync automatically.
   const [wifi, setWifi] = useState(true);
   const [focus, setFocus] = useState(false);
   const [lowPower, setLowPower] = useState(false);
@@ -101,25 +207,13 @@ export default function App() {
     return () => clearInterval(t);
   }, []);
 
-  // The engine refracts whatever `--lq-backdrop` paints; keep the real page
-  // background and the refracted copy pointed at the same image.
+  // The library reads the page background from document.body. Set the body
+  // background per wallpaper, then re-detect — no CSS vars, no remount.
   useLayoutEffect(() => {
-    document.documentElement.style.setProperty(
-      "--lq-backdrop",
-      `url(${wallpaper.file})`,
-    );
     document.body.style.backgroundImage = `url(${wallpaper.file})`;
     document.body.style.backgroundColor = wallpaper.base;
+    setBackground(null);
   }, [wallpaper]);
-
-  // The element whose content the nav and lens refract.
-  const pageRef = useRef(null);
-  const alignToPage = useCallback(() => pageRef.current, []);
-  // `inert` (set via ref: React 18 has no attribute support) makes the copies
-  // unfocusable and invisible to assistive tech in one stroke.
-  const inertRef = useCallback((node) => {
-    if (node) node.inert = true;
-  }, []);
 
   const sceneProps = {
     wifi,
@@ -145,40 +239,32 @@ export default function App() {
     setTune,
   };
 
-  // A flat, inert duplicate of the page for a glass surface to refract.
-  // Rendered once per surface (nav, lens); layout must match the real page.
-  const pageCopy = (
-    <GlassCopyContext.Provider value={true}>
-      <div className="page-copy" aria-hidden="true" ref={inertRef}>
-        <Scenes {...sceneProps} />
-      </div>
-    </GlassCopyContext.Provider>
-  );
-
   return (
-    // Remount on wallpaper change so every controller re-reads the backdrop.
-    <div key={wallpaper.id}>
-      <Nav alignTo={alignToPage} copy={pageCopy} />
-      <div ref={pageRef}>
-        <main>
-          <Scenes
-            {...sceneProps}
-            lensAlignTo={alignToPage}
-            lensCopy={pageCopy}
-          />
-        </main>
+    <div className="app-root">
+      {/* The full-page surface wraps the scroller (never the scroller itself —
+          Safari rule). Its content bends in place under every overlay lens. */}
+      <GlassSurface background className="app-surface">
+        <div className="app-scroller">
+          <main>
+            <Scenes {...sceneProps} />
+          </main>
+        </div>
+      </GlassSurface>
+
+      {/* Chrome renders OUTSIDE the surface, so it refracts the live page. */}
+      <div className="overlay-layer">
+        <Nav />
+        <GlassLens className="hero-lens" size={200} hint="Drag me" />
+        <WallpaperSwitcher current={wallpaper} onSelect={setWallpaper} />
       </div>
-      <WallpaperSwitcher current={wallpaper} onSelect={setWallpaper} />
     </div>
   );
 }
 
-/* Everything that scrolls under the nav. Rendered up to three times: the real
-   page, the nav's refraction copy, and the lens's refraction copy. */
 function Scenes(p) {
   return (
     <>
-      <Hero lensAlignTo={p.lensAlignTo} lensCopy={p.lensCopy} />
+      <Hero />
       <DockScene />
       <LockScreenScene
         now={p.now}
@@ -199,57 +285,39 @@ function Scenes(p) {
 /* ── Chrome ─────────────────────────────────────────────────────────────── */
 
 /**
- * The fixed glass nav. Its refraction layer holds a wallpaper slice plus a
- * flat copy of the page content, aligned to the real page every frame
- * (refraction-target mode) — so headlines genuinely bend through the bar as
- * they scroll past.
+ * The glass nav bar. It lives in the overlay layer over the page surface, so
+ * `surfaces: "auto"` registers it against the surface and it bends whatever
+ * scrolls beneath — one `<Glass>`, no duplicate copy of the page.
  */
-function Nav({ alignTo, copy }) {
-  const g = useGlass({
-    radius: 999,
-    depth: 20,
-    scale: 56,
-    blur: 2.5,
-    chroma: 0.5,
-    specular: 0.35,
-    rimLight: 0.9,
-    tint: "rgba(255,255,255,0.08)",
-    shadow: "0 18px 50px rgba(0,0,0,0.35)",
-    alignTo,
-  });
-  const wallpaperRef = useCopyWallpaper(alignTo);
-
+function Nav() {
   return (
-    <div
-      className="glassx nav lq"
-      ref={g.hostRef}
-      // The backdrop copy is huge; never let find-in-page or programmatic
-      // scrolling shift it inside the overflow-hidden host.
-      onScroll={(e) => {
-        e.currentTarget.scrollTop = 0;
-        e.currentTarget.scrollLeft = 0;
-      }}
+    <Glass
+      as="nav"
+      className="glassx nav"
+      aria-label="Primary"
+      radius={999}
+      depth={20}
+      scale={56}
+      blur={1.5}
+      chroma={0.5}
+      specular={0.35}
+      rimLight={0.9}
+      tint="rgba(255,255,255,0.08)"
+      shadow="0 18px 50px rgba(0,0,0,0.35)"
     >
-      <div ref={g.refractionRef} className="lq-refraction">
-        <div ref={g.backdropRef} className="lq-backdrop">
-          <div ref={wallpaperRef} className="copy-wallpaper" />
-          {copy}
-        </div>
-      </div>
-      <div ref={g.sheenRef} className="lq-sheen" />
-      <div className="lq-content nav-row">
+      <div className="nav-row">
         <a className="nav-brand" href="#top" aria-label="Liquid Glass — home">
           <LensMark />
           liquid-glass
         </a>
-        <nav className="nav-links" aria-label="Site">
+        <div className="nav-links">
           <a href="https://www.npmjs.com/package/@tomagranate/liquid-glass">
             npm
           </a>
           <a href={REPO}>GitHub</a>
-        </nav>
+        </div>
       </div>
-    </div>
+    </Glass>
   );
 }
 
@@ -277,8 +345,7 @@ function GitHubIcon(props) {
   );
 }
 
-function Hero({ lensAlignTo, lensCopy }) {
-  const flat = useContext(GlassCopyContext);
+function Hero() {
   const [copied, setCopied] = useState(false);
 
   const copyInstall = () => {
@@ -290,15 +357,14 @@ function Hero({ lensAlignTo, lensCopy }) {
   };
 
   return (
-    // No ids inside refraction copies — they'd shadow the real anchors.
-    <header className="hero shell" id={flat ? undefined : "top"}>
+    <header className="hero shell" id="top">
       <p className="eyebrow">@tomagranate/liquid-glass</p>
       <h1 className="hero-title">Interfaces that bend light.</h1>
       <p className="lede">
         An Apple-style liquid-glass material for the web, built on a single SVG
         filter primitive. Every surface on this page refracts what lies behind
-        it — wallpaper and content alike. No screenshots, no backdrop hacks, and
-        a WebGL fallback for canvas and video.
+        it — wallpaper and live content alike. No screenshots, no backdrop
+        hacks, and a WebGL fallback for canvas and video.
       </p>
       <div className="hero-actions">
         <GlassButton
@@ -327,13 +393,7 @@ function Hero({ lensAlignTo, lensCopy }) {
           <ClipboardIcon className="install-icon" />
         )}
       </button>
-      <GlassLens
-        className="hero-lens"
-        size={200}
-        hint="Drag me"
-        alignTo={lensAlignTo}
-        copy={lensCopy}
-      />
+      <CodeBlock tabs={HERO_CODE} />
     </header>
   );
 }
@@ -351,17 +411,17 @@ function SceneHeader({ index, title, children }) {
 }
 
 function DockScene() {
-  const flat = useContext(GlassCopyContext);
   return (
-    <section className="scene shell" id={flat ? undefined : "dock"}>
+    <section className="scene shell" id="dock">
       <SceneHeader index="01" title="One slab of glass, eight apps.">
-        The dock is a single refracting surface; the icons ride on top of it in
-        the content layer. Hover an icon — the wallpaper stays bent underneath
-        while the content moves freely.
+        The dock is a single glass panel; the icons ride on top in the content
+        layer. Hover an icon — the wallpaper stays bent underneath while the
+        content moves freely.
       </SceneHeader>
       <div className="stage stage-center">
         <GlassDock />
       </div>
+      <CodeBlock code={DOCK_CODE} lang="jsx" />
     </section>
   );
 }
@@ -385,8 +445,8 @@ function LockScreenScene({ now, playing, setPlaying, progress, setProgress }) {
         title="Read your notifications through the wallpaper."
       >
         Cards frost just enough to keep text legible while the rim keeps bending
-        the picture behind them, and the progress thumb in the player is a
-        moving lens refracting the track underneath.
+        the picture behind them. The player's progress thumb is a live lens: the
+        filled bar of its track bends in place under the thumb as it slides.
       </SceneHeader>
       <div className="stage lock">
         <p className="lock-time">{time}</p>
@@ -419,9 +479,10 @@ function LockScreenScene({ now, playing, setPlaying, progress, setProgress }) {
           app="Mail"
           time="8:12 AM"
           title="Release notes"
-          body="v0.0.3 — refraction without screenshots"
+          body="v0.1 — refraction without screenshots"
         />
       </div>
+      <CodeBlock code={SLIDER_CODE} lang="jsx" />
     </section>
   );
 }
@@ -485,7 +546,7 @@ function Notification({ gradient, Icon, app, time, title, body }) {
 }
 
 /* The Auto/Light/Dark segments restyle the tiles' glass material live —
-   tint and frost are plain options, so switching them is just an update. */
+   tint and frost are plain options, so switching them is just a patch. */
 const APPEARANCE_GLASS = {
   auto: {},
   light: { tint: "rgba(255,255,255,0.34)", blur: 3, rimLight: 1.1 },
@@ -497,9 +558,11 @@ function ControlCenterScene(p) {
   return (
     <section className="scene shell">
       <SceneHeader index="03" title="Controls with real lenses for thumbs.">
-        Switch thumbs refract the track color sliding beneath them, and the
-        segmented control mixes the tiles a lighter or darker glass — tint and
-        frost are just material options.
+        Each switch track is its own tiny surface; the thumb is a lens that
+        bends the track — colour transition and all — in place as it slides, and
+        the engine tracks the CSS motion automatically. The segmented control
+        mixes the tiles a lighter or darker glass, because tint and frost are
+        just material options.
       </SceneHeader>
       <div className="stage">
         <div className="cc-grid">
@@ -572,6 +635,7 @@ function ControlCenterScene(p) {
           />
         </div>
       </div>
+      <CodeBlock code={SWITCH_CODE} lang="jsx" />
     </section>
   );
 }
@@ -580,13 +644,14 @@ function VideoScene() {
   return (
     <section className="scene shell">
       <SceneHeader index="04" title="Glass over live video.">
-        An SVG filter can't sample a playing video, so these controls fall back
-        to a WebGL shader fed the same displacement map — every frame refracts
-        through the buttons in real time.
+        A `GlassMediaSurface` registers the video and drives a WebGL shader fed
+        the same displacement map, because an SVG filter can't sample a playing
+        video. Every frame refracts through the glass controls in real time.
       </SceneHeader>
       <div className="stage stage-center">
         <GlassVideoPlayer width={680} height={383} />
       </div>
+      <CodeBlock tabs={VIDEO_CODE} />
     </section>
   );
 }
@@ -595,25 +660,27 @@ function ShockwaveScene() {
   return (
     <section className="scene shell">
       <SceneHeader index="05" title="Shockwaves through the light field.">
-        Tap the field to send one slow, wide refracting pulse across the source
-        pixels. The wavefront bends the geometry, glints, and then fades back
+        The low-level API: a hand-written WebGL2 shader, no `glass()` call in
+        sight. Tap the field to send one slow, wide refracting pulse across the
+        source pixels — the wavefront bends the geometry, glints, and fades back
         into register.
       </SceneHeader>
       <div className="stage">
         <GlassShockwave />
       </div>
+      <CodeBlock code={SHOCKWAVE_CODE} lang="js" />
     </section>
   );
 }
 
 function PlaygroundScene({ tune, setTune }) {
-  const flat = useContext(GlassCopyContext);
   const set = (key) => (v) => setTune((t) => ({ ...t, [key]: v }));
   return (
-    <section className="scene shell" id={flat ? undefined : "playground"}>
+    <section className="scene shell" id="playground">
       <SceneHeader index="06" title="Mix your own material.">
         Displacement, rim depth, chromatic aberration, frost, and rim light are
-        all parameters. Tune the specimen, then ship the numbers you like.
+        all parameters. Tune the specimen — each change is a `handle.update()`
+        patch, not a rebuild — then ship the numbers you like.
       </SceneHeader>
       <div className="stage playground">
         <div className="specimen-stage">
@@ -678,31 +745,23 @@ function PlaygroundScene({ tune, setTune }) {
           />
         </GlassPanel>
       </div>
+      <CodeBlock code={PLAYGROUND_CODE} lang="jsx" />
     </section>
   );
 }
 
-/* A standalone glass surface (backdrop-clone mode) whose material is tunable. */
+/* A standalone glass specimen whose material is tuned via handle.update(). */
 function Specimen({ tune }) {
-  const flat = useContext(GlassCopyContext);
-  return flat ? (
-    <div className="specimen lq glassx-flat">
-      <span className="lq-content specimen-label">Specimen</span>
-    </div>
-  ) : (
-    <SpecimenImpl tune={tune} />
-  );
-}
+  const ref = useRef(null);
+  const handle = useGlass(ref, { radius: 32, ...tune });
 
-function SpecimenImpl({ tune }) {
-  const g = useGlass({ radius: 32, ...tune });
+  useEffect(() => {
+    handle?.update({ radius: 32, ...tune });
+  }, [handle, tune]);
+
   return (
-    <div ref={g.hostRef} className="specimen lq">
-      <div ref={g.refractionRef} className="lq-refraction">
-        <div ref={g.backdropRef} className="lq-backdrop" />
-      </div>
-      <div ref={g.sheenRef} className="lq-sheen" />
-      <span className="lq-content specimen-label glass-fg">Specimen</span>
+    <div ref={ref} className="glassx specimen">
+      <span className="specimen-label">Specimen</span>
     </div>
   );
 }

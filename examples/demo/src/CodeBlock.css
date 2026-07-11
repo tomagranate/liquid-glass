@@ -1,0 +1,126 @@
+/* Glass-panelled code sample. The container is a `<Glass>` (see CodeBlock.jsx),
+   so these rules only cover the content that rides on top of the refraction. */
+
+.cb {
+  margin-top: 28px;
+  width: 100%;
+  border-radius: 18px;
+}
+
+.cb-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cb-lang {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.cb-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.cb-tab {
+  appearance: none;
+  border: 0;
+  padding: 5px 13px;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
+}
+.cb-tab:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+.cb-tab[data-active="true"] {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.cb-copy {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.78);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+.cb-copy:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+.cb-copy-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  fill: currentColor;
+}
+
+.cb-pre {
+  margin: 0;
+  padding: 16px 18px 18px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.cb-code {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  tab-size: 2;
+}
+
+/* Token colors — a calm palette that stays legible over the tinted glass. */
+.cb-keyword {
+  color: #ff8fb3;
+}
+.cb-type {
+  color: #7fd4ff;
+}
+.cb-fn {
+  color: #ffd479;
+}
+.cb-string {
+  color: #96e6a1;
+}
+.cb-number,
+.cb-literal {
+  color: #f0a879;
+}
+.cb-comment {
+  color: rgba(255, 255, 255, 0.42);
+  font-style: italic;
+}

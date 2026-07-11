@@ -1,46 +1,101 @@
 /* Structural styles for the liquid-glass layers. The *material* (refraction
    filter, tint, rim light, shadow) is applied by the core via inline styles;
-   these rules just lay the layers out. */
+   these rules lay the layers out. Compositor-layer promotion is Safari-only
+   (`.lg-composited`, added by the core behind a UA gate — see the rule at the
+   bottom of this file). */
 
-.lq {
+/* ── Glass panel (lens) ─────────────────────────────────────────────────── */
+
+.lg {
   position: relative;
   overflow: hidden;
   isolation: isolate;
 }
 
-/* The layer that gets `filter: url(#glass)`. It holds the backdrop copy. */
-.lq-refraction {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  /* Promote to its own layer; keeps the filter cheap to recomposite on move. */
-  will-change: filter;
-}
-
-/* A copy of the page background, sized to the viewport and offset by the core
-   so it lines up with the real background behind the glass. */
-.lq-backdrop {
+/* Bent page-background copy: ONE element carrying the painted copy and the
+   SVG filter (or a backdrop-filter: a per-lens `url()` one on the Chromium
+   backdrop tier, a native blur in the Safari degrade tier). Copy tier: sized
+   lens + sampling margin and pulled back by -margin via an inline transform;
+   the .lg host clips the overhang. Backdrop tier: inset 0, no transform. */
+.lg-bg {
   position: absolute;
   top: 0;
   left: 0;
+  z-index: 0;
+  pointer-events: none;
   background-repeat: no-repeat;
-  background-size: cover;
-  /* Offset by the core via transform; hint the compositor. */
-  will-change: transform;
 }
 
-/* Tint + rim light + hairline border + drop shadow. */
-.lq-sheen {
+/* CSS rim light + directional sheen. */
+.lg-sheen {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
+  border-radius: inherit;
 }
 
-/* The real, interactive content rides on top. */
-.lq-content {
+/* Baked specular highlight (Chromium backdrop tier only). The highlight
+   derives purely from the static displacement map, so instead of an in-chain
+   specular pass re-running over the backdrop every composited frame it is
+   rendered once to a bitmap; plus-lighter reproduces the chain's arithmetic
+   composite (k2·spec + lens) exactly. Core-created, never adopted. */
+.lg-spec {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  mix-blend-mode: plus-lighter;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/* Consumer children stay crisp and interactive on top. */
+.lg > :not(.lg-sheen):not(.lg-bg):not(.lg-spec) {
   position: relative;
   z-index: 2;
-  height: 100%;
+}
+
+/* ── Content surface ────────────────────────────────────────────────────── */
+
+/* `isolation` gives the surface its own stacking context (needed by the
+   `.lgs-bg` negative z-index below) without promoting a compositor layer. */
+.lgs-surface {
+  isolation: isolate;
+}
+
+/* Viewport-registered page-background copy behind the surface content, so
+   lenses bend wallpaper + content together. First child; the negative
+   z-index keeps it under the content inside the surface's own stacking
+   context (from `isolation` above). */
+.lgs-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-repeat: no-repeat;
+}
+
+/* ── Media surface ──────────────────────────────────────────────────────── */
+
+/* WebGL overlay positioned over the media rect by the core. (A WebGL canvas
+   gets its own compositor layer without any promotion hints.) */
+.lgm-overlay {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* ── Safari-only compositor promotion ───────────────────────────────────── */
+
+/* Real Safari blanks feImage-backed SVG filters on non-composited layers
+   (ARCHITECTURE, Safari rule 1), so the core adds this class to every
+   filtered element behind a UA gate. It must never apply on other engines:
+   promoting every background layer forces a texture re-upload of each one on
+   every scrolled frame — measured 8fps → 49fps in the demo when Chromium
+   stopped promoting. Inline transforms set by the core append translateZ(0)
+   on Safari for the same reason. */
+.lg-composited {
+  transform: translateZ(0);
+  will-change: transform;
 }

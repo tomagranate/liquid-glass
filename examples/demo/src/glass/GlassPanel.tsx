@@ -1,13 +1,12 @@
-import { type HTMLAttributes, useContext } from "react";
+import type { HTMLAttributes } from "react";
 import type { GlassOptions } from "@tomagranate/liquid-glass";
-import { useGlass } from "@tomagranate/liquid-glass";
-import { GlassCopyContext } from "./flat.ts";
+import { Glass } from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 export interface GlassPanelProps extends HTMLAttributes<HTMLDivElement> {
   /** Per-instance glass material overrides. */
   glass?: GlassOptions;
-  /** Extra class for the content layer (`.lq-content`). */
+  /** Extra class for the inner content layer. */
   contentClassName?: string;
 }
 
@@ -24,46 +23,27 @@ const PANEL_GLASS: GlassOptions = {
 };
 
 /**
- * A general-purpose glass surface: cards, tiles, docks. The panel is one `.lq`
- * surface refracting the page backdrop; children ride on top in `.lq-content`
- * and stay crisp and interactive.
+ * A general-purpose glass surface: cards, tiles, docks. A thin wrapper over
+ * `<Glass>` — the panel sits inside the page surface, so it refracts whatever
+ * is behind it (wallpaper + live content) with no extra wiring. Children ride
+ * on top in a content layer and stay crisp and interactive.
  */
-export function GlassPanel(props: GlassPanelProps) {
-  const flat = useContext(GlassCopyContext);
-  return flat ? <FlatPanel {...props} /> : <PanelImpl {...props} />;
-}
-
-function PanelImpl({
+export function GlassPanel({
   glass,
   className = "",
   contentClassName = "",
   children,
   ...rest
 }: GlassPanelProps) {
-  const g = useGlass({ ...PANEL_GLASS, ...glass });
-
   return (
-    <div ref={g.hostRef} className={`glassx lq ${className}`} {...rest}>
-      <div ref={g.refractionRef} className="lq-refraction">
-        <div ref={g.backdropRef} className="lq-backdrop" />
-      </div>
-      <div ref={g.sheenRef} className="lq-sheen" />
-      <div className={`lq-content ${contentClassName}`}>{children}</div>
-    </div>
-  );
-}
-
-function FlatPanel({
-  glass: _glass,
-  className = "",
-  contentClassName = "",
-  children,
-  ...rest
-}: GlassPanelProps) {
-  return (
-    <div className={`glassx lq glassx-flat ${className}`} {...rest}>
-      <div className={`lq-content ${contentClassName}`}>{children}</div>
-    </div>
+    <Glass
+      className={`glassx ${className}`}
+      {...PANEL_GLASS}
+      {...glass}
+      {...rest}
+    >
+      <div className={`glassx-content ${contentClassName}`}>{children}</div>
+    </Glass>
   );
 }
 
