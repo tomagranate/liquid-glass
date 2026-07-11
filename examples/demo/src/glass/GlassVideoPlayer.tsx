@@ -48,6 +48,7 @@ const BUBBLE_GLASS = {
 };
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
+const WAITING_SURFACES = [];
 
 /**
  * A video player whose controls are liquid glass. The `<video>` is wrapped in a
@@ -69,8 +70,7 @@ export function GlassVideoPlayer({
   const [progress, setProgress] = useState(0);
   const [size, setSize] = useState({ width, height });
   const aspectRatio = width / height;
-  const waitingBackground = `url("${poster}")`;
-  const waitingTint = "rgba(175,220,235,0.16)";
+  const waitingTint = "rgba(220,245,255,0.34)";
 
   // Measure the video element (absolutely filling the surface) so control
   // positions track the rendered player size without relying on ref forwarding.
@@ -214,8 +214,10 @@ export function GlassVideoPlayer({
           as="button"
           type="button"
           className="glassx-video-ctl glassx-video-bigplay"
+          data-waiting={!mediaReady}
           {...BUBBLE_GLASS}
-          background={mediaReady ? false : waitingBackground}
+          surfaces={mediaReady ? "auto" : WAITING_SURFACES}
+          background={false}
           tint={mediaReady ? BUBBLE_GLASS.tint : waitingTint}
           style={{
             left: layout.bubble.x,
@@ -232,8 +234,10 @@ export function GlassVideoPlayer({
 
       <Glass
         className="glassx-video-scrub"
+        data-waiting={!mediaReady}
         {...SCRUB_GLASS}
-        background={mediaReady ? false : waitingBackground}
+        surfaces={mediaReady ? "auto" : WAITING_SURFACES}
+        background={false}
         tint={mediaReady ? SCRUB_GLASS.tint : waitingTint}
         style={{
           left: layout.scrub.x,
@@ -260,8 +264,10 @@ export function GlassVideoPlayer({
         as="button"
         type="button"
         className="glassx-video-ctl"
+        data-waiting={!mediaReady}
         {...BAR_GLASS}
-        background={mediaReady ? false : waitingBackground}
+        surfaces={mediaReady ? "auto" : WAITING_SURFACES}
+        background={false}
         tint={mediaReady ? BAR_GLASS.tint : waitingTint}
         style={{
           left: layout.vol.x,
