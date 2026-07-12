@@ -358,8 +358,97 @@ async function assertKeyboardInteraction(selector, key, attribute, label) {
 }
 
 async function assertInteractions() {
+  const installState = await driver.executeScript(`
+    const hero=document.querySelector('.hero');
+    const hook=document.querySelector('#examples');
+    const guide=document.querySelector('#compatibility');
+    const advanced=document.querySelector('#catalogue');
+    const table=guide?.querySelector('table');
+    return {
+      order:[hero,hook,guide,advanced].map((node) => node?.offsetTop ?? -1),
+      caption:table?.caption?.textContent.trim() || '',
+      headers:[...(table?.querySelectorAll('thead th') || [])].map((node) => node.textContent.trim()),
+      rows:table?.querySelectorAll('tbody tr').length || 0,
+    };
+  `);
+  if (
+    installState.order.some((value) => value < 0) ||
+    installState.order.some(
+      (value, index, values) => index > 0 && value <= values[index - 1],
+    )
+  ) {
+    throw new Error(
+      `Demo information architecture is out of order: ${installState.order}`,
+    );
+  }
+  if (
+    !installState.caption ||
+    installState.headers.length !== 4 ||
+    installState.rows !== 4
+  ) {
+    throw new Error(
+      `Compatibility table is not semantically complete: ${JSON.stringify(installState)}`,
+    );
+  }
+
+  const packageTabs = await driver.findElements(
+    By.css('.install-tabs [role="tab"]'),
+  );
+  if (packageTabs.length !== 3)
+    throw new Error("Install selector must expose npm, pnpm, and bun");
+  const packageLabels = await Promise.all(
+    packageTabs.map((tab) => tab.getText()),
+  );
+  if (packageLabels.join(",") !== "npm,pnpm,bun") {
+    throw new Error(`Unexpected install choices: ${packageLabels.join(",")}`);
+  }
+  await packageTabs[1].click();
+  let installCommand = await driver
+    .findElement(By.css("#install-command"))
+    .getText();
+  if (installCommand !== "pnpm add @tomagranate/liquid-glass") {
+    throw new Error(`pnpm install command is wrong: ${installCommand}`);
+  }
+  await packageTabs[1].sendKeys(Key.ARROW_RIGHT);
+  await driver.wait(
+    async () => (await packageTabs[2].getAttribute("aria-selected")) === "true",
+    2_000,
+  );
+  const bunFocused = await driver.executeScript(
+    "return document.activeElement === arguments[0]",
+    packageTabs[2],
+  );
+  if (!bunFocused)
+    throw new Error("Install tab arrow navigation did not move focus");
+  installCommand = await driver
+    .findElement(By.css("#install-command"))
+    .getText();
+  if (installCommand !== "bun add @tomagranate/liquid-glass") {
+    throw new Error(`bun install command is wrong: ${installCommand}`);
+  }
+  const installCopy = await driver.findElement(By.css(".install"));
+  await scrollTo(installCopy);
+  await installCopy.click();
+  await driver.wait(
+    async () =>
+      (await driver
+        .findElement(By.css('.install-card [aria-live="polite"]'))
+        .getAttribute("textContent")) === "Install command copied",
+    2_000,
+  );
+  summary.interactions.push({
+    label: "install selector",
+    choices: packageLabels,
+    command: installCommand,
+  });
+
   const dock = await driver.findElement(By.css(".glassx-dock"));
   await scrollTo(dock);
+  await driver
+    .actions({ async: true })
+    .move({ x: 2, y: 2, origin: "viewport" })
+    .perform();
+  await driver.sleep(120);
   const dockRoi = await visibleRoi(dock);
   const dockBefore = await takeScreenshot("dock-before-wallpaper.png");
   const firstApp = await dock.findElement(By.css(".glassx-dock-app"));
@@ -742,14 +831,27 @@ async function assertInteractions() {
   });
 
   const allExamples = await driver.findElements(By.css(".cb"));
-  const tabbedExamples = await driver.findElements(By.css(".cb:has(.cb-tabs)"));
-  if (allExamples.length < 7 || tabbedExamples.length !== allExamples.length)
+  if (allExamples.length < 7)
     throw new Error(
-      `Every public code example must expose React/Vanilla tabs; total=${allExamples.length} tabbed=${tabbedExamples.length}`,
+      `Expected at least seven public code examples; total=${allExamples.length}`,
     );
   const toggledExamples = [];
-  for (const [index, block] of tabbedExamples.entries()) {
+  for (const [index, block] of allExamples.entries()) {
     await scrollTo(block);
+    const disclosure = await block.findElement(By.css(".cb-disclosure"));
+    if ((await disclosure.getAttribute("aria-expanded")) !== "false") {
+      throw new Error(`Code example ${index + 1} is not collapsed by default`);
+    }
+    if ((await block.findElements(By.css(".cb-tab"))).length) {
+      throw new Error(
+        `Code example ${index + 1} exposes focusable controls while collapsed`,
+      );
+    }
+    await disclosure.click();
+    await driver.wait(
+      async () => (await disclosure.getAttribute("aria-expanded")) === "true",
+      2_000,
+    );
     const tabs = await block.findElements(By.css(".cb-tab"));
     const labelledTabs = await Promise.all(
       tabs.map(async (tab) => ({ tab, label: (await tab.getText()).trim() })),

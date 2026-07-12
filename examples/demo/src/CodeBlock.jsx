@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { CheckIcon, ClipboardIcon } from "@heroicons/react/16/solid";
 import { Glass } from "@tomagranate/liquid-glass/react";
 import "./CodeBlock.css";
@@ -123,10 +123,12 @@ const CODE_GLASS = {
  * itself is a heavily-tinted {@link Glass} so it refracts the page behind it
  * while staying legible. Syntax highlighting is the local regex tokenizer.
  */
-export function CodeBlock({ code, lang = "jsx", tabs }) {
+export function CodeBlock({ code, lang = "jsx", tabs, collapsed = true }) {
   const items = tabs ?? [{ label: lang.toUpperCase(), lang, code }];
   const [active, setActive] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(!collapsed);
+  const regionId = useId();
   const current = items[Math.min(active, items.length - 1)];
 
   const copy = () => {
@@ -136,9 +138,18 @@ export function CodeBlock({ code, lang = "jsx", tabs }) {
   };
 
   return (
-    <Glass className="cb" {...CODE_GLASS}>
+    <Glass className="cb" data-open={open} {...CODE_GLASS}>
       <div className="cb-head">
-        {items.length > 1 ? (
+        <button
+          type="button"
+          className="cb-disclosure"
+          aria-expanded={open}
+          aria-controls={regionId}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? "Hide code" : "Show code"}
+        </button>
+        {open && items.length > 1 ? (
           <div className="cb-tabs" role="tablist" aria-label="Code variants">
             {items.map((item, i) => (
               <button
@@ -148,30 +159,35 @@ export function CodeBlock({ code, lang = "jsx", tabs }) {
                 aria-selected={i === active}
                 className="cb-tab"
                 data-active={i === active}
-                onClick={() => setActive(i)}
+                onClick={() => {
+                  setActive(i);
+                  setOpen(true);
+                }}
               >
                 {item.label}
               </button>
             ))}
           </div>
-        ) : (
+        ) : open ? (
           <span className="cb-lang">{current.label}</span>
+        ) : null}
+        {open && (
+          <button
+            type="button"
+            className="cb-copy"
+            onClick={copy}
+            aria-label="Copy code"
+          >
+            {copied ? (
+              <CheckIcon className="cb-copy-icon" />
+            ) : (
+              <ClipboardIcon className="cb-copy-icon" />
+            )}
+            {copied ? "Copied" : "Copy"}
+          </button>
         )}
-        <button
-          type="button"
-          className="cb-copy"
-          onClick={copy}
-          aria-label="Copy code"
-        >
-          {copied ? (
-            <CheckIcon className="cb-copy-icon" />
-          ) : (
-            <ClipboardIcon className="cb-copy-icon" />
-          )}
-          {copied ? "Copied" : "Copy"}
-        </button>
       </div>
-      <pre className="cb-pre">
+      <pre className="cb-pre" id={regionId} hidden={!open}>
         <Highlighted code={current.code} />
       </pre>
     </Glass>

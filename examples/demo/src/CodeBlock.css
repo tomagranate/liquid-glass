@@ -14,6 +14,16 @@
   padding: 10px 12px 10px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
+.cb-disclosure {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font: 600 12px / 1 var(--mono);
+  cursor: pointer;
+}
 
 .cb-lang {
   font-family: var(--mono);
@@ -91,6 +101,9 @@
   padding: 16px 18px 18px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+.cb[data-open="false"] .cb-pre {
+  display: none;
 }
 .cb-code {
   display: block;

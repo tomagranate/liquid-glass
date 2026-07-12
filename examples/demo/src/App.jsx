@@ -422,7 +422,11 @@ function Scenes(p) {
   return (
     <>
       <Hero wallpaper={p.wallpaper} setWallpaper={p.setWallpaper} />
+      <ShowcaseIntro />
       <DockScene />
+      <ControlCenterScene {...p} />
+      <DragScene />
+      <CompatibilityScene />
       <LockScreenScene
         now={p.now}
         playing={p.playing}
@@ -430,7 +434,6 @@ function Scenes(p) {
         progress={p.progress}
         setProgress={p.setProgress}
       />
-      <ControlCenterScene {...p} />
       <VideoScene />
       <PatternsScene />
       <CanvasMediaScene />
@@ -504,12 +507,17 @@ function GitHubIcon(props) {
 }
 
 function Hero({ wallpaper, setWallpaper }) {
+  const [manager, setManager] = useState("npm");
   const [copied, setCopied] = useState(false);
+  const installCommands = {
+    npm: "npm install @tomagranate/liquid-glass",
+    pnpm: "pnpm add @tomagranate/liquid-glass",
+    bun: "bun add @tomagranate/liquid-glass",
+  };
+  const managers = Object.keys(installCommands);
 
   const copyInstall = () => {
-    navigator.clipboard
-      ?.writeText("npm install @tomagranate/liquid-glass")
-      .catch(() => {});
+    navigator.clipboard?.writeText(installCommands[manager]).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };
@@ -523,21 +531,19 @@ function Hero({ wallpaper, setWallpaper }) {
       <p className="eyebrow">@tomagranate/liquid-glass</p>
       <h1 className="hero-title">Interfaces that bend light.</h1>
       <p className="lede">
-        Progressive liquid-glass for the web. Chromium gets live compositor
-        refraction; Safari and Firefox use bounded copied or in-place surfaces,
-        then degrade to native blur or tint before the effect can overwhelm a
-        frame. Video and canvas use a WebGL media path.
+        Add real refraction to buttons, cards, docks, and media controls—without
+        turning your whole page into a GPU stress test.
       </p>
       <div className="hero-actions">
         <GlassButton
           variant="primary"
           onClick={() =>
             document
-              .getElementById("dock")
+              .getElementById("examples")
               ?.scrollIntoView({ behavior: "smooth" })
           }
         >
-          Explore the scenarios
+          See it in action
         </GlassButton>
         <GlassButton
           variant="ghost"
@@ -547,20 +553,205 @@ function Hero({ wallpaper, setWallpaper }) {
           View on GitHub
         </GlassButton>
       </div>
-      <button type="button" className="install" onClick={copyInstall}>
-        <code>npm install @tomagranate/liquid-glass</code>
-        {copied ? (
-          <CheckIcon className="install-icon" />
-        ) : (
-          <ClipboardIcon className="install-icon" />
-        )}
-      </button>
+      <div className="install-card" aria-label="Install liquid-glass">
+        <div
+          className="install-tabs"
+          role="tablist"
+          aria-label="Package manager"
+        >
+          {managers.map((name, index) => (
+            <button
+              key={name}
+              type="button"
+              role="tab"
+              aria-selected={manager === name}
+              aria-controls="install-command"
+              onClick={() => setManager(name)}
+              onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+                event.preventDefault();
+                const direction = event.key === "ArrowRight" ? 1 : -1;
+                const next =
+                  managers[
+                    (index + direction + managers.length) % managers.length
+                  ];
+                setManager(next);
+                event.currentTarget.parentElement
+                  ?.querySelector(`[data-manager="${next}"]`)
+                  ?.focus();
+              }}
+              data-manager={name}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="install" onClick={copyInstall}>
+          <code id="install-command">{installCommands[manager]}</code>
+          {copied ? (
+            <CheckIcon className="install-icon" />
+          ) : (
+            <ClipboardIcon className="install-icon" />
+          )}
+        </button>
+        <span className="sr-only" aria-live="polite">
+          {copied ? "Install command copied" : ""}
+        </span>
+      </div>
       <div className="hero-wallpapers">
         <span>Try another wallpaper</span>
         <WallpaperSwitcher current={wallpaper} onSelect={setWallpaper} />
       </div>
       <CodeBlock tabs={HERO_CODE} />
     </header>
+  );
+}
+
+function ShowcaseIntro() {
+  return (
+    <section className="section-intro shell" id="examples">
+      <p className="eyebrow">Made for real interfaces</p>
+      <h2 className="scene-title">A little glass goes a long way.</h2>
+      <p className="scene-sub">
+        Hover the dock. Flip a switch. Drag a lens. These are working controls,
+        not screenshots—and every example keeps its implementation one click
+        away.
+      </p>
+    </section>
+  );
+}
+
+function DragScene() {
+  return (
+    <section className="scene shell quick-drag">
+      <SceneHeader index="03" title="Put a lens wherever it helps.">
+        Drag it across the chart. The effect follows the pointer while the chart
+        remains a normal, interactive piece of your page.
+      </SceneHeader>
+      <div className="stage lens-demo quick-drag-stage">
+        <GlassSurface className="lens-demo-surface">
+          <span>Conversion</span>
+          <strong>42.8%</strong>
+          <div className="lens-demo-chart" aria-hidden="true" />
+        </GlassSurface>
+        <MovableGlass />
+      </div>
+    </section>
+  );
+}
+
+const COMPATIBILITY_ROWS = [
+  ["Automatic glass", "Live page", "Wallpaper copy", "Wallpaper copy"],
+  ["Live UI surface", "Full effect", "Full effect*", "Full effect*"],
+  ["Video & canvas", "Full effect", "Full effect", "Full effect"],
+  ["Fallback appearance", "Blur or tint", "Blur or tint", "Blur or tint"],
+];
+const COMPATIBILITY_BROWSERS = ["Chrome", "Safari", "Firefox"];
+
+function CompatibilityScene() {
+  return (
+    <section className="scene shell compatibility" id="compatibility">
+      <SceneHeader index="How it works" title="Pick the right kind of glass.">
+        Tell the library what sits behind the glass. It chooses the fastest safe
+        route for each browser and falls back before the effect hurts the page.
+      </SceneHeader>
+      <div className="compat-table-wrap">
+        <table className="compat-table">
+          <caption>
+            How each glass mode behaves in current desktop browsers
+          </caption>
+          <thead>
+            <tr>
+              <th>What you are refracting</th>
+              <th>Chrome</th>
+              <th>Safari</th>
+              <th>Firefox</th>
+            </tr>
+          </thead>
+          <tbody>
+            {COMPATIBILITY_ROWS.map(([mode, ...cells]) => (
+              <tr key={mode}>
+                <th>{mode}</th>
+                {cells.map((cell, index) => (
+                  <td key={`${mode}-${COMPATIBILITY_BROWSERS[index]}`}>
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="compat-note">
+          * Keep registered UI areas bounded in Safari and Firefox. Large or
+          dense areas automatically become native blur/tint instead of breaking.
+        </p>
+      </div>
+      <div className="mode-grid">
+        <ModeCard
+          title="Automatic glass"
+          best="Best for navigation, floating buttons, and wallpaper-backed cards."
+          tradeoff="Chrome can bend any live page pixels. Safari and Firefox use a matching background copy, so unregistered DOM behind the glass is not sampled live."
+        >
+          <Glass className="mode-pill" preset="thin">
+            Over the wallpaper
+          </Glass>
+        </ModeCard>
+        <ModeCard
+          title="Live UI surface"
+          best="Best cross-browser choice for controls, charts, and draggable lenses."
+          tradeoff="A registered area bends its own pixels beneath an overlapping sibling lens. Keep it to a card or section—especially on Safari—and it stays fast."
+        >
+          <div className="mode-surface-wrap">
+            <GlassSurface className="mode-surface">LIVE UI · 68%</GlassSurface>
+            <Glass className="mode-lens" background={false}>
+              Lens
+            </Glass>
+          </div>
+        </ModeCard>
+        <ModeCard
+          title="Video & canvas"
+          best="Best for players, maps, games, and data visualizations."
+          tradeoff="Uses WebGL2 because browser filters cannot read moving media. Sources must be same-origin or CORS-enabled. Work stops when it is off-screen or no lens overlaps."
+        >
+          <GlassMediaSurface className="mode-media-preview">
+            <img src="/coast.jpg" alt="Coastal video preview" />
+            <Glass className="mode-media-control" background={false}>
+              Play
+            </Glass>
+          </GlassMediaSurface>
+        </ModeCard>
+        <ModeCard
+          title="Fallback appearance"
+          best="The safety net for oversized or dense effects."
+          tradeoff="The component stays readable and glass-like with native blur or tint when full refraction is unavailable or over budget."
+        >
+          <Glass
+            className="mode-fallback"
+            fallback="blur"
+            quality="performance"
+          >
+            Always usable
+          </Glass>
+        </ModeCard>
+      </div>
+      <p className="compat-guidance">
+        <strong>Our default:</strong> start with ordinary{" "}
+        <code>&lt;Glass&gt;</code>. Register a small surface only when its live
+        contents must refract. Use a media surface only for video, canvas, or
+        images.
+      </p>
+    </section>
+  );
+}
+
+function ModeCard({ title, best, tradeoff, children }) {
+  return (
+    <article className="mode-card">
+      <div className="mode-demo">{children}</div>
+      <h3>{title}</h3>
+      <p className="mode-best">{best}</p>
+      <p>{tradeoff}</p>
+    </article>
   );
 }
 
@@ -876,20 +1067,6 @@ function PatternsScene() {
             <Glass className="catalogue-lens" preset="thin" background={false}>
               Live content
             </Glass>
-          </div>
-        </CatalogueCard>
-
-        <CatalogueCard
-          title="A lens users can move"
-          description="Drag the lens across a detailed surface. Programmatic moves stay aligned through the public handle."
-        >
-          <div className="lens-demo">
-            <GlassSurface className="lens-demo-surface">
-              <span>Quarterly</span>
-              <strong>42.8%</strong>
-              <div className="lens-demo-chart" aria-hidden="true" />
-            </GlassSurface>
-            <MovableGlass />
           </div>
         </CatalogueCard>
 
