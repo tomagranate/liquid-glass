@@ -20,8 +20,9 @@ export interface MutableDiagnostics {
   };
   backgroundCopyWorkload: {
     lenses: number;
+    admitted?: number;
     devicePixelPassArea: number;
-    tier: "full" | "lean" | "native";
+    tier: "full" | "lean" | "native" | "partial";
     reason: string;
   };
   policy: Array<{
@@ -50,7 +51,7 @@ export interface ScopeRuntime {
     number
   >;
   backdropRefreshQueued: boolean;
-  readonly backgroundCopyWorkloads: Map<object, BackgroundCopyWorkload>;
+  readonly backgroundCopyWorkloads: Map<object, TrackedBackgroundCopyWorkload>;
   backgroundCopyDevicePixelPassArea: number;
   backgroundCopyRefreshQueued: boolean;
   background: string | null;
@@ -69,6 +70,12 @@ export interface BackgroundCopyWorkload {
   passMultiplier: number;
   engine: import("./policy.js").GlassEngine;
   refresh(): void;
+}
+
+interface TrackedBackgroundCopyWorkload extends BackgroundCopyWorkload {
+  readonly insertionSequence: number;
+  admitted: boolean | null;
+  rejectionReason: string | null;
 }
 
 export const BACKDROP_AGGREGATE_THRESHOLDS = {
@@ -98,6 +105,38 @@ export const BACKGROUND_COPY_LEAN_THRESHOLDS = {
 } as const;
 
 const BACKGROUND_COPY_EXIT_HYSTERESIS = 0.7;
+let backgroundCopyInsertionSequence = 0;
+const backgroundCopyQualityTiers = new WeakMap<ScopeRuntime, "full" | "lean">();
+
+export interface BackgroundCopyWorkloadVerdict {
+  readonly tier: "full" | "lean" | "native";
+  readonly reason: string;
+}
+
+/** Return this lens's aggregate-copy verdict, independent of its siblings. */
+export function backgroundCopyWorkloadVerdict(
+  runtime: ScopeRuntime | undefined,
+  key: object,
+): BackgroundCopyWorkloadVerdict | null {
+  if (!runtime) return null;
+  const workload = runtime.backgroundCopyWorkloads.get(key);
+  if (!workload) return null;
+  if (!workload.admitted) {
+    return {
+      tier: "native",
+      reason:
+        workload.rejectionReason ?? "aggregate-admission-over-copy-budget",
+    };
+  }
+  const tier = backgroundCopyQualityTiers.get(runtime) ?? "full";
+  return {
+    tier,
+    reason:
+      tier === "lean"
+        ? "aggregate-background-copy-lean-device-pixel-pass-budget"
+        : "within-aggregate-background-copy-budget",
+  };
+}
 
 /** Update one visible backdrop lens and coalesce any tier transition refresh. */
 export function updateBackdropWorkload(
@@ -162,7 +201,7 @@ export function updateBackdropWorkload(
   });
 }
 
-/** Update one visible painted copy and coalesce an engine safety-tier change. */
+/** Update one visible painted copy and coalesce admission/quality refreshes. */
 export function updateBackgroundCopyWorkload(
   runtime: ScopeRuntime | undefined,
   key: object,
@@ -170,12 +209,37 @@ export function updateBackgroundCopyWorkload(
 ): void {
   if (!runtime) return;
   const previousWorkload = runtime.backgroundCopyWorkloads.get(key);
+  if (
+    previousWorkload &&
+    workload &&
+    previousWorkload.deviceArea === workload.deviceArea &&
+    previousWorkload.passMultiplier === workload.passMultiplier &&
+    previousWorkload.engine === workload.engine
+  ) {
+    // Geometry notifications often re-report an identical workload. Keep that
+    // hot path O(1), while retaining the latest closure for a later refresh.
+    previousWorkload.refresh = workload.refresh;
+    return;
+  }
+
+  const previousAdmissions = new Map<object, boolean | null>();
+  for (const [entryKey, entry] of runtime.backgroundCopyWorkloads) {
+    previousAdmissions.set(entryKey, entry.admitted);
+  }
+  const previousQualityTier = backgroundCopyQualityTiers.get(runtime) ?? "full";
   if (previousWorkload) {
     runtime.backgroundCopyDevicePixelPassArea -=
       previousWorkload.deviceArea * previousWorkload.passMultiplier;
   }
   if (workload) {
-    runtime.backgroundCopyWorkloads.set(key, workload);
+    runtime.backgroundCopyWorkloads.set(key, {
+      ...workload,
+      insertionSequence:
+        previousWorkload?.insertionSequence ??
+        backgroundCopyInsertionSequence++,
+      admitted: previousWorkload?.admitted ?? null,
+      rejectionReason: previousWorkload?.rejectionReason ?? null,
+    });
     runtime.backgroundCopyDevicePixelPassArea +=
       workload.deviceArea * workload.passMultiplier;
   } else {
@@ -190,42 +254,92 @@ export function updateBackgroundCopyWorkload(
     "chromium";
   const nativeThreshold = BACKGROUND_COPY_AGGREGATE_THRESHOLDS[engine];
   const leanThreshold = BACKGROUND_COPY_LEAN_THRESHOLDS[engine];
-  const previous = runtime.diagnostics.backgroundCopyWorkload.tier;
-  let next: "full" | "lean" | "native";
-  if (previous === "native") {
-    next =
-      total >= nativeThreshold * BACKGROUND_COPY_EXIT_HYSTERESIS
-        ? "native"
-        : total > leanThreshold
-          ? "lean"
-          : "full";
-  } else if (previous === "lean") {
-    next =
-      total > nativeThreshold
-        ? "native"
-        : total < leanThreshold * BACKGROUND_COPY_EXIT_HYSTERESIS
+  const qualityTier =
+    leanThreshold === nativeThreshold
+      ? "full"
+      : previousQualityTier === "lean"
+        ? total < leanThreshold * BACKGROUND_COPY_EXIT_HYSTERESIS
           ? "full"
-          : "lean";
-  } else {
-    next =
-      total > nativeThreshold
-        ? "native"
+          : "lean"
         : total > leanThreshold
           ? "lean"
           : "full";
+  backgroundCopyQualityTiers.set(runtime, qualityTier);
+
+  const ordered = [...runtime.backgroundCopyWorkloads.values()].sort(
+    (left, right) =>
+      left.deviceArea * left.passMultiplier -
+        right.deviceArea * right.passMultiplier ||
+      left.insertionSequence - right.insertionSequence,
+  );
+  let admittedCost = 0;
+  let admitted = 0;
+  for (const entry of ordered) {
+    const cost = entry.deviceArea * entry.passMultiplier;
+    // New lenses enter against the full budget. Once rejected, they need the
+    // lower exit threshold before re-entry; admitted lenses keep their place
+    // until the greedy running total actually exceeds the full budget.
+    const postAdmissionCost = admittedCost + cost;
+    const withinAdmissionThreshold =
+      entry.admitted === false
+        ? postAdmissionCost < nativeThreshold * BACKGROUND_COPY_EXIT_HYSTERESIS
+        : postAdmissionCost <= nativeThreshold;
+    if (withinAdmissionThreshold) {
+      entry.admitted = true;
+      entry.rejectionReason = null;
+      admittedCost += cost;
+      admitted++;
+    } else {
+      entry.admitted = false;
+      entry.rejectionReason =
+        cost > nativeThreshold
+          ? "aggregate-background-copy-device-pixel-pass-budget"
+          : "aggregate-admission-over-copy-budget";
+    }
   }
+
+  const lenses = runtime.backgroundCopyWorkloads.size;
+  const next: "full" | "lean" | "native" | "partial" =
+    admitted === 0 && lenses > 0
+      ? "native"
+      : admitted < lenses
+        ? "partial"
+        : qualityTier;
+  const everyRejectedLensExceedsBudget =
+    lenses > 0 &&
+    ordered.every(
+      (entry) => entry.deviceArea * entry.passMultiplier > nativeThreshold,
+    );
   runtime.diagnostics.backgroundCopyWorkload = {
-    lenses: runtime.backgroundCopyWorkloads.size,
+    lenses,
+    admitted,
     devicePixelPassArea: total,
     tier: next,
     reason:
-      next === "native"
-        ? "aggregate-background-copy-device-pixel-pass-budget"
-        : next === "lean"
-          ? "aggregate-background-copy-lean-device-pixel-pass-budget"
-          : "within-aggregate-background-copy-budget",
+      next === "partial"
+        ? "aggregate-admission-over-copy-budget"
+        : next === "native"
+          ? everyRejectedLensExceedsBudget
+            ? "aggregate-background-copy-device-pixel-pass-budget"
+            : "aggregate-admission-over-copy-budget"
+          : next === "lean"
+            ? "aggregate-background-copy-lean-device-pixel-pass-budget"
+            : "within-aggregate-background-copy-budget",
   };
-  if (next === previous || runtime.backgroundCopyRefreshQueued) return;
+  let verdictChanged = previousQualityTier !== qualityTier;
+  if (!verdictChanged) {
+    for (const [entryKey, entry] of runtime.backgroundCopyWorkloads) {
+      const previousAdmission = previousAdmissions.get(entryKey);
+      if (
+        previousAdmission !== undefined &&
+        previousAdmission !== entry.admitted
+      ) {
+        verdictChanged = true;
+        break;
+      }
+    }
+  }
+  if (!verdictChanged || runtime.backgroundCopyRefreshQueued) return;
   runtime.backgroundCopyRefreshQueued = true;
   queueMicrotask(() => {
     runtime.backgroundCopyRefreshQueued = false;
@@ -244,8 +358,11 @@ export function diagnosticsSnapshot(
     backdropWorkload: Object.freeze({ ...value.backdropWorkload }),
     backgroundCopyWorkload: Object.freeze({
       ...value.backgroundCopyWorkload,
+      admitted:
+        value.backgroundCopyWorkload.admitted ??
+        value.backgroundCopyWorkload.lenses,
     }),
-  });
+  }) as GlassDiagnostics;
 }
 
 export function recordPolicy(
@@ -256,7 +373,7 @@ export function recordPolicy(
   const next = {
     backend: decision.backend,
     reason: decision.reason,
-    dpr: decision.effectiveMaterial.dpr,
+    dpr: decision.dpr,
     chroma: decision.effectiveMaterial.chroma,
     specular: decision.effectiveMaterial.specular,
     filterWidth: decision.filterWidth,

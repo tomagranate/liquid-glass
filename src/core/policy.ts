@@ -33,6 +33,7 @@ export interface PolicyDecision {
   backend: GlassBackend;
   effectiveMaterial: ResolvedLensMaterial;
   reason: string;
+  dpr: number;
   provisionalBudget: number;
   deviceArea: number;
   filterWidth: number;
@@ -109,6 +110,7 @@ export function chooseGlassPolicy(input: PolicyInput): PolicyDecision {
       backend: "none",
       effectiveMaterial: material,
       reason: "offscreen",
+      dpr,
       provisionalBudget: budget,
       deviceArea,
       filterWidth,
@@ -120,6 +122,54 @@ export function chooseGlassPolicy(input: PolicyInput): PolicyDecision {
   const firefoxAnimatedRisk =
     input.engine === "firefox" && input.moving && deviceArea > budget * 0.5;
   if (webkitHardDimension || deviceArea > budget || firefoxAnimatedRisk) {
+    const cssFilterWidth = input.width + 2 * reach;
+    const cssFilterHeight = input.height + 2 * reach;
+    const cssFilterArea = cssFilterWidth * cssFilterHeight;
+    const dimensionCap =
+      input.engine === "webkit"
+        ? Math.min(2048 / cssFilterWidth, 2048 / cssFilterHeight)
+        : Number.POSITIVE_INFINITY;
+    const areaCap = Math.sqrt(budget / cssFilterArea);
+    const animatedRiskCap =
+      input.engine === "firefox" && input.moving
+        ? Math.sqrt((budget * 0.5) / cssFilterArea)
+        : Number.POSITIVE_INFINITY;
+    let clampedDpr = Math.min(dpr, dimensionCap, areaCap, animatedRiskCap);
+    const satisfiesClampConstraints = (candidate: number): boolean =>
+      (input.engine !== "webkit" ||
+        (cssFilterWidth * candidate <= 2048 &&
+          cssFilterHeight * candidate <= 2048)) &&
+      cssFilterArea * candidate * candidate <= budget &&
+      (input.engine !== "firefox" ||
+        !input.moving ||
+        cssFilterArea * candidate * candidate <= budget * 0.5);
+    // Division/square-root roundoff can put the mathematical boundary a few
+    // ulps above its cap. Nudge inward so the returned dimensions satisfy the
+    // same strict comparisons that triggered this branch.
+    if (!satisfiesClampConstraints(clampedDpr)) {
+      clampedDpr *= 1 - Number.EPSILON;
+    }
+    if (clampedDpr >= 1) {
+      material.dpr = Math.min(material.dpr, clampedDpr);
+      const clampCause =
+        dimensionCap <= areaCap && dimensionCap <= animatedRiskCap
+          ? "dimension-cap"
+          : areaCap <= animatedRiskCap
+            ? "area-budget"
+            : "animated-risk";
+      const clampedFilterWidth = cssFilterWidth * clampedDpr;
+      const clampedFilterHeight = cssFilterHeight * clampedDpr;
+      return {
+        backend: input.desiredBackend,
+        effectiveMaterial: material,
+        reason: `dpr-clamped-to-${clampCause}`,
+        dpr: clampedDpr,
+        provisionalBudget: budget,
+        deviceArea: clampedFilterWidth * clampedFilterHeight,
+        filterWidth: clampedFilterWidth,
+        filterHeight: clampedFilterHeight,
+      };
+    }
     return {
       backend: fallbackBackend(input.fallback),
       effectiveMaterial: material,
@@ -128,6 +178,7 @@ export function chooseGlassPolicy(input: PolicyInput): PolicyDecision {
         : firefoxAnimatedRisk
           ? "firefox-animated-software-filter"
           : "provisional-area-budget",
+      dpr,
       provisionalBudget: budget,
       deviceArea,
       filterWidth,
@@ -138,6 +189,7 @@ export function chooseGlassPolicy(input: PolicyInput): PolicyDecision {
     backend: input.desiredBackend,
     effectiveMaterial: material,
     reason: "within-provisional-budget",
+    dpr,
     provisionalBudget: budget,
     deviceArea,
     filterWidth,

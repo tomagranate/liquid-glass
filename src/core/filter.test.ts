@@ -277,18 +277,39 @@ describe("buildBackdropFilter", () => {
     const map = f.querySelector("feImage");
     expect(map?.getAttribute("result")).toBe("map");
     expect(map?.getAttribute("href")).toBe("data:image/png,m");
+    expect(map?.getAttribute("x")).toBe("0");
+    expect(map?.getAttribute("y")).toBe("0");
     expect(map?.getAttribute("width")).toBe("120");
     expect(map?.getAttribute("height")).toBe("60");
     expect(map?.getAttribute("preserveAspectRatio")).toBe("none");
 
-    // No expanded neutral field or silhouette compositing on this tier: the
-    // inward map covers the whole border box, so displacement is the output.
+    // No expanded neutral field or silhouette compositing on this tier.
     expect(f.querySelector("feFlood")).toBeNull();
     const disp = f.querySelector("feDisplacementMap");
     expect(disp?.getAttribute("in")).toBe("SourceGraphic");
     expect(disp?.getAttribute("in2")).toBe("map");
     expect(disp?.getAttribute("scale")).toBe("40");
     expect(f.lastElementChild).toBe(disp);
+  });
+
+  it("uses the oversized carrier region while keeping the map on the lens box", () => {
+    const f = buildBackdropFilter({
+      id: "bd-margin",
+      width: 120,
+      height: 60,
+      mapUrl: "data:image/png,m",
+      scale: 40,
+      margin: 44,
+    });
+    expect(f.getAttribute("x")).toBe("0");
+    expect(f.getAttribute("y")).toBe("0");
+    expect(f.getAttribute("width")).toBe("208");
+    expect(f.getAttribute("height")).toBe("148");
+    const map = f.querySelector('feImage[result="map"]');
+    expect(map?.getAttribute("x")).toBe("44");
+    expect(map?.getAttribute("y")).toBe("44");
+    expect(map?.getAttribute("width")).toBe("120");
+    expect(map?.getAttribute("height")).toBe("60");
   });
 
   it("includes the lens's own blur and chroma in the chain", () => {
@@ -333,16 +354,44 @@ describe("buildBackdropFilter", () => {
     );
   });
 
-  it("never emits an in-chain specular pass (baked to a static overlay)", () => {
-    const f = buildBackdropFilter({
+  it("adds a baked specular image to the bent result inside the chain", () => {
+    const withSpec = buildBackdropFilter({
       id: "bd5",
       width: 100,
       height: 50,
       mapUrl: "data:image/png,m",
       scale: 40,
+      margin: 42,
+      specUrl: "data:image/png,s",
     });
-    expect(f.querySelector('[result="spec"]')).toBeNull();
-    expect(f.querySelector('[result="speclens"]')).toBeNull();
+    const spec = withSpec.querySelector('feImage[result="spec"]');
+    expect(spec?.getAttribute("href")).toBe("data:image/png,s");
+    expect(spec?.getAttribute("x")).toBe("42");
+    expect(spec?.getAttribute("y")).toBe("42");
+    expect(spec?.getAttribute("width")).toBe("100");
+    expect(spec?.getAttribute("height")).toBe("50");
+    expect(spec?.getAttribute("preserveAspectRatio")).toBe("none");
+
+    const composite = withSpec.lastElementChild;
+    expect(composite?.localName).toBe("feComposite");
+    expect(composite?.getAttribute("in")).toBe("spec");
+    expect(composite?.getAttribute("in2")).toBe("lens");
+    expect(composite?.getAttribute("operator")).toBe("arithmetic");
+    expect(composite?.getAttribute("k1")).toBe("0");
+    expect(composite?.getAttribute("k2")).toBe("1");
+    expect(composite?.getAttribute("k3")).toBe("1");
+    expect(composite?.getAttribute("k4")).toBe("0");
+
+    const withoutSpec = buildBackdropFilter({
+      id: "bd6",
+      width: 100,
+      height: 50,
+      mapUrl: "data:image/png,m",
+      scale: 40,
+      specUrl: null,
+    });
+    expect(withoutSpec.querySelector('[result="spec"]')).toBeNull();
+    expect(withoutSpec.querySelectorAll("feImage")).toHaveLength(1);
   });
 });
 

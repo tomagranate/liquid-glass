@@ -73,6 +73,38 @@ describe("createPanel", () => {
     host.remove();
   });
 
+  it("moves tint and shadow to a core-owned layer immediately above the bg", () => {
+    const host = document.createElement("div");
+    const child = document.createElement("button");
+    host.appendChild(child);
+    document.body.appendChild(host);
+    const panel = createPanel(host);
+
+    panel.applyChrome(chrome, "layer");
+    const chromeLayer = host.querySelector<HTMLElement>(":scope > .lg-chrome");
+    expect(chromeLayer).toBeTruthy();
+    expect(chromeLayer?.getAttribute("aria-hidden")).toBe("true");
+    expect(host.firstElementChild).toBe(chromeLayer);
+    expect(host.style.background).toBe("none");
+    expect(host.style.boxShadow).toBe("none");
+    expect(chromeLayer?.style.background).toBe("rgb(1, 2, 3)");
+    expect(chromeLayer?.style.boxShadow).toBe("0px 0px 2px red");
+
+    const bg = panel.ensureBg();
+    expect(Array.from(host.children).slice(0, 2)).toEqual([bg, chromeLayer]);
+
+    panel.applyChrome(chrome);
+    expect(host.querySelector(":scope > .lg-chrome")).toBeNull();
+    expect(host.style.background).toBe("rgb(1, 2, 3)");
+    expect(host.style.boxShadow).toBe("0px 0px 2px red");
+
+    panel.applyChrome(chrome, "layer");
+    panel.destroy();
+    expect(host.querySelector(":scope > .lg-chrome")).toBeNull();
+    expect(Array.from(host.children)).toEqual([child]);
+    host.remove();
+  });
+
   it("adopts existing .lg-sheen/.lg-bg children (React owns them) and never removes them", () => {
     const host = document.createElement("div");
     const bg = document.createElement("div");
@@ -92,11 +124,40 @@ describe("createPanel", () => {
     expect(host.querySelectorAll(".lg-bg")).toHaveLength(1);
     expect(sheen.style.boxShadow).not.toBe("");
 
+    panel.applyChrome(chrome, "layer");
+    const chromeLayer = host.querySelector(":scope > .lg-chrome");
+    expect(bg.nextElementSibling).toBe(chromeLayer);
+
     panel.destroy();
     // Adopted nodes stay in place with their original inline styles restored.
     expect(Array.from(host.children)).toEqual([bg, sheen]);
     expect(sheen.style.cssText).toBe("");
     expect(bg.style.cssText).toBe("opacity: 0.5;");
+    host.remove();
+  });
+
+  it("frost adds the dome highlight and floors the rim strength", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const panel = createPanel(host);
+    const sheen = host.querySelector<HTMLElement>(":scope > .lg-sheen");
+    if (!sheen) throw new Error("sheen missing");
+
+    // The layered dome gradient itself is asserted in the browser suite —
+    // jsdom's CSS parser drops multi-layer gradient shorthands.
+    panel.applyChrome(chrome, "host", true);
+    // rimLight 0.6 floors to 0.95: the top rim inset uses 0.9 * k.
+    expect(sheen.style.boxShadow).toContain(`rgba(255,255,255,${0.9 * 0.95})`);
+
+    // Back to a refractive tier: the rim is as configured.
+    panel.applyChrome(chrome);
+    expect(sheen.style.boxShadow).toContain(`rgba(255,255,255,${0.9 * 0.6})`);
+
+    // An explicit rimLight of 0 stays 0 even under frost.
+    panel.applyChrome({ ...chrome, rimLight: 0 }, "host", true);
+    expect(sheen.style.boxShadow).toContain("rgba(255,255,255,0)");
+
+    panel.destroy();
     host.remove();
   });
 });

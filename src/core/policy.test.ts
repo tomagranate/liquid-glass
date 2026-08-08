@@ -64,7 +64,25 @@ describe("glass runtime policy", () => {
     expect(decisions[2].effectiveMaterial.dpr).toBe(2);
   });
 
-  it("enforces Firefox area and WebKit hard-dimension fallbacks", () => {
+  it("keeps the desired WebKit backend by clamping a 1080px lens", () => {
+    const result = chooseGlassPolicy({
+      engine: "webkit",
+      desiredBackend: "background-copy",
+      quality: "fidelity",
+      fallback: "blur",
+      material: { ...material, quality: "fidelity" },
+      width: 1080,
+      height: 51,
+      dpr: 2,
+    });
+    expect(result.backend).toBe("background-copy");
+    expect(result.reason).toBe("dpr-clamped-to-dimension-cap");
+    expect(result.dpr).toBeLessThan(2);
+    expect(result.effectiveMaterial.dpr).toBe(result.dpr);
+    expect(result.filterWidth).toBeLessThanOrEqual(2048);
+  });
+
+  it("keeps old fallback reasons when no valid DPR exists", () => {
     const firefox = chooseGlassPolicy({
       engine: "firefox",
       desiredBackend: "content-svg",
@@ -81,14 +99,81 @@ describe("glass runtime policy", () => {
       engine: "webkit",
       desiredBackend: "content-svg",
       quality: "fidelity",
-      fallback: "none",
-      material,
-      width: 1100,
+      fallback: "blur",
+      material: {
+        ...material,
+        scale: 0,
+        blur: 0,
+        chroma: 0,
+        quality: "fidelity",
+      },
+      width: 2200,
       height: 100,
       dpr: 2,
     });
-    expect(webkit.backend).toBe("none");
+    expect(webkit.backend).toBe("native");
     expect(webkit.reason).toBe("webkit-hard-dimension");
+  });
+
+  it("clamps a Firefox area-budget decision and its map supersampling", () => {
+    const result = chooseGlassPolicy({
+      engine: "firefox",
+      desiredBackend: "content-svg",
+      quality: "balanced",
+      fallback: "blur",
+      material: { ...material, scale: 0, blur: 0, chroma: 0 },
+      width: 800,
+      height: 500,
+      dpr: 2,
+    });
+    expect(result.backend).toBe("content-svg");
+    expect(result.reason).toBe("dpr-clamped-to-area-budget");
+    expect(result.dpr).toBeCloseTo(Math.sqrt(750_000 / (800 * 500)));
+    expect(result.effectiveMaterial.dpr).toBe(result.dpr);
+    expect(result.deviceArea).toBeCloseTo(result.provisionalBudget);
+  });
+
+  it("uses the stricter animated-risk cap for moving Firefox filters", () => {
+    const result = chooseGlassPolicy({
+      engine: "firefox",
+      desiredBackend: "content-svg",
+      quality: "balanced",
+      fallback: "blur",
+      material: { ...material, scale: 0, blur: 0, chroma: 0 },
+      width: 600,
+      height: 400,
+      dpr: 2,
+      moving: true,
+    });
+    expect(result.backend).toBe("content-svg");
+    expect(result.reason).toBe("dpr-clamped-to-animated-risk");
+    expect(result.dpr).toBe(1.25);
+    expect(result.effectiveMaterial.dpr).toBe(1.25);
+    expect(result.deviceArea).toBe(result.provisionalBudget * 0.5);
+  });
+
+  it("accepts an exact DPR 1 dimension cap but never clamps below it", () => {
+    const result = chooseGlassPolicy({
+      engine: "webkit",
+      desiredBackend: "background-copy",
+      quality: "fidelity",
+      fallback: "blur",
+      material: {
+        ...material,
+        scale: 0,
+        blur: 0,
+        chroma: 0,
+        quality: "fidelity",
+      },
+      width: 2048,
+      height: 51,
+      dpr: 2,
+    });
+    expect(result.backend).toBe("background-copy");
+    expect(result.reason).toBe("dpr-clamped-to-dimension-cap");
+    expect(result.dpr).toBe(1);
+    expect(result.effectiveMaterial.dpr).toBe(1);
+    expect(result.filterWidth).toBe(2048);
   });
 
   it("degrades when filter reach pushes raw-under-budget content over area", () => {

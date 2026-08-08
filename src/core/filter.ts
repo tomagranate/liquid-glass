@@ -358,7 +358,7 @@ export function buildGlassFilter(o: GlassFilterOptions): SVGFilterElement {
  * chain cost is what matters — and dispersion is a rim-only fringe that does
  * not earn three full-area passes on a large pane (~390×390 px: docks and
  * pills stay under, code panes go over; measured 41 → 103 fps on the demo at
- * dpr 2 together with the baked specular overlay).
+ * dpr 2 together with the baked specular bitmap).
  */
 export const BACKDROP_CHROMA_AREA_LIMIT = 150_000;
 
@@ -376,6 +376,10 @@ export interface BackdropFilterOptions {
   blur?: number;
   /** chromatic aberration, 0..1 (dropped above {@link BACKDROP_CHROMA_AREA_LIMIT}) */
   chroma?: number;
+  /** CSS px the backdrop carrier extends past the lens on every side */
+  margin?: number;
+  /** baked white specular-highlight bitmap */
+  specUrl?: string | null;
 }
 
 /**
@@ -383,18 +387,27 @@ export interface BackdropFilterOptions {
  * tier. SourceGraphic is the live backdrop, sampled by the compositor at
  * composite time — zero scroll lag by construction. Unlike
  * {@link buildGlassFilter} there is no neutral field or silhouette
- * compositing: the map covers the whole border box and the host's rounded
- * overflow clip shapes the output. The backdrop map bends inward so its rim
- * never requests nonexistent pixels beyond this exact source region. The chain
- * is kept as lean as the
- * per-frame re-filtering demands: chroma is area-adaptive, and specular is
- * baked into a static overlay (`bakeSpecularHighlight`) instead of running
- * in-chain.
+ * compositing: the map covers the lens box within an oversized backdrop
+ * carrier, and the host's rounded overflow clip shapes the output. The extra
+ * sampling margin lets the convex map pull real backdrop pixels into the rim.
+ * Chroma remains area-adaptive. A baked specular bitmap is added inside this
+ * SVG chain: a plus-lighter sibling would make the panel Chromium's backdrop
+ * root, leaving every sibling backdrop-filter lens with an empty black input.
  */
 export function buildBackdropFilter(
   o: BackdropFilterOptions,
 ): SVGFilterElement {
-  const { id, width, height, mapUrl, scale, blur = 0, chroma = 0 } = o;
+  const {
+    id,
+    width,
+    height,
+    mapUrl,
+    scale,
+    blur = 0,
+    chroma = 0,
+    margin = 0,
+    specUrl = null,
+  } = o;
   const effectiveChroma =
     width * height > BACKDROP_CHROMA_AREA_LIMIT ? 0 : chroma;
   const filter = svgEl("filter", {
@@ -404,26 +417,50 @@ export function buildBackdropFilter(
     "color-interpolation-filters": "sRGB",
     x: "0",
     y: "0",
-    width: String(width),
-    height: String(height),
+    width: String(width + 2 * margin),
+    height: String(height + 2 * margin),
   });
   filter.appendChild(
     svgEl("feImage", {
       href: mapUrl,
       preserveAspectRatio: "none",
-      x: "0",
-      y: "0",
+      x: String(margin),
+      y: String(margin),
       width: String(width),
       height: String(height),
       result: "map",
     }),
   );
-  appendGlassChain(filter, {
+  const bent = appendGlassChain(filter, {
     scale,
     blur,
     chroma: effectiveChroma,
     specular: 0,
   });
+  if (specUrl) {
+    filter.appendChild(
+      svgEl("feImage", {
+        href: specUrl,
+        preserveAspectRatio: "none",
+        x: String(margin),
+        y: String(margin),
+        width: String(width),
+        height: String(height),
+        result: "spec",
+      }),
+    );
+    filter.appendChild(
+      svgEl("feComposite", {
+        in: "spec",
+        in2: bent,
+        operator: "arithmetic",
+        k1: "0",
+        k2: "1",
+        k3: "1",
+        k4: "0",
+      }),
+    );
+  }
   return filter;
 }
 

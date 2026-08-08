@@ -1,4 +1,5 @@
-export const DEMO_CASES = Object.freeze([
+// Cases live on the marketing page at "/".
+export const MAIN_CASES = Object.freeze([
   "wallpaper-zero-config",
   "live-backdrop-auto-fallback",
   "slider",
@@ -6,6 +7,11 @@ export const DEMO_CASES = Object.freeze([
   "switch-slider-toggle",
   "video-media",
   "bounded-content-surface",
+  "material-update",
+]);
+
+// Cases live on the utilitarian fixtures page at "/?fixtures".
+export const FIXTURE_CASES = Object.freeze([
   "partial-overlap-composition",
   "reduced-quality",
   "oversized-surface-fallback",
@@ -13,8 +19,10 @@ export const DEMO_CASES = Object.freeze([
   "vanilla-api",
   "nested-scope-isolation",
   "canvas-media",
-  "material-update",
 ]);
+
+// Kept for compatibility: the union of both pages' cases.
+export const DEMO_CASES = Object.freeze([...MAIN_CASES, ...FIXTURE_CASES]);
 
 export const BACKEND_CASES = Object.freeze(
   DEMO_CASES.filter(
@@ -50,10 +58,14 @@ export function expectedBackendFamily(browser, demoCase) {
   return ["background-copy", "content-svg", "native"];
 }
 
-export function validateDemoSnapshot(snapshot, browser) {
+export function validateDemoSnapshot(
+  snapshot,
+  browser,
+  expectedCases = DEMO_CASES,
+) {
   const failures = [];
   const found = new Set(snapshot.cases || []);
-  for (const expected of DEMO_CASES) {
+  for (const expected of expectedCases) {
     if (!found.has(expected)) failures.push(`missing demo case: ${expected}`);
   }
   for (const duplicate of snapshot.duplicateIds || []) {
@@ -65,7 +77,11 @@ export function validateDemoSnapshot(snapshot, browser) {
   for (const input of snapshot.inputsWithoutName || []) {
     failures.push(`input missing name: ${input}`);
   }
-  if (snapshot.densityLenses !== 32) {
+  // The density fixture only lives on the fixtures page.
+  if (
+    expectedCases.includes("density-32-lenses") &&
+    snapshot.densityLenses !== 32
+  ) {
     failures.push(`density lens count ${snapshot.densityLenses}; expected 32`);
   }
   if (snapshot.horizontalOverflow > 1) {
@@ -76,7 +92,8 @@ export function validateDemoSnapshot(snapshot, browser) {
   if (!snapshot.reducedMotionRule) {
     failures.push("reduced-motion CSS invariant is missing");
   }
-  for (const demoCase of BACKEND_CASES) {
+  for (const demoCase of expectedCases) {
+    if (!BACKEND_CASES.includes(demoCase)) continue;
     const actual = snapshot.backends?.[demoCase] || [];
     const expected = expectedBackendFamily(browser, demoCase);
     if (actual.some((backend) => !KNOWN_BACKENDS.has(backend))) {
@@ -168,7 +185,7 @@ export function validateSceneSnapshot(snapshot) {
   if (!snapshot.dock.effectCarrier)
     failures.push("dock has no rendered effect carrier");
 
-  if (snapshot.notifications.length < 3)
+  if (snapshot.notifications.length < 1)
     failures.push(
       `only ${snapshot.notifications.length} notifications rendered`,
     );

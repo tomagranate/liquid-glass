@@ -389,17 +389,23 @@ describe("browser: aggregate background-copy policy", () => {
     for (let index = 1; index < 4; index++) addLens();
     if (isSafariEngine()) {
       await vi.waitFor(() => {
-        expect(handles.every((handle) => handle.backends[0] === "native")).toBe(
+        expect(handles.some((handle) => handle.backends[0] === "native")).toBe(
           true,
         );
+        expect(
+          handles.some((handle) => handle.backends[0] === "background-copy"),
+        ).toBe(true);
       });
       expect(scope.getDiagnostics().backgroundCopyWorkload).toMatchObject({
         lenses: 4,
-        tier: "native",
-        reason: "aggregate-background-copy-device-pixel-pass-budget",
+        tier: "partial",
+        reason: "aggregate-admission-over-copy-budget",
       });
       expect(
-        elements.every((element) => displacementPasses(element) === 0),
+        elements.some((element) => displacementPasses(element) === 0),
+      ).toBe(true);
+      expect(
+        elements.some((element) => displacementPasses(element) === 3),
       ).toBe(true);
 
       while (handles.length > 1) {
@@ -771,10 +777,26 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
     const style = getComputedStyle(bg);
     if (supportsBackdropUrlFilter()) {
       // Chromium: the compositor samples the real backdrop at composite
-      // time — no painted copy, no transform, no scroll work.
+      // time — no painted copy or scroll work. The carrier itself is enlarged
+      // and offset so convex refraction can sample beyond the lens box.
       expect(style.backdropFilter).toContain("url(");
       expect(style.backgroundImage).toBe("none");
       expect(bg.style.transform).toBe("");
+      expect(bg.style.left).toBe("-10px");
+      expect(bg.style.top).toBe("-10px");
+      expect(bg.style.width).toBe("calc(100% + 20px)");
+      expect(bg.style.height).toBe("calc(100% + 20px)");
+      expect(lensEl.style.overflow).toBe("visible");
+      expect(lensEl.style.background).toBe("none");
+      expect(lensEl.style.boxShadow).toBe("none");
+      expect(style.clipPath).not.toBe("none");
+      const chrome = lensEl.querySelector<HTMLElement>(":scope > .lg-chrome");
+      const sheen = lensEl.querySelector<HTMLElement>(":scope > .lg-sheen");
+      expect(chrome).toBeTruthy();
+      expect(bg.nextElementSibling).toBe(chrome);
+      expect(chrome?.nextElementSibling).toBe(sheen);
+      expect(chrome?.style.background).toContain("0.06");
+      expect(chrome?.style.boxShadow).not.toBe("none");
       // No viewport-registration writes (the copy tier's scroll work).
       expect(bg.style.backgroundPosition).not.toMatch(/px/);
     } else {
@@ -789,7 +811,7 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
   });
 
   it.skipIf(!supportsBackdropUrlFilter())(
-    "keeps rounded-pill backdrop sampling inside Chrome source corners",
+    "gives convex rounded-pill refraction an oversized Chrome sampling box",
     async () => {
       document.body.style.cssText =
         "margin:0;overflow:hidden;background:linear-gradient(135deg,#f64,#35f);";
@@ -809,10 +831,13 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
       const filter = document.getElementById(filterId ?? "");
       expect(filter?.getAttribute("x")).toBe("0");
       expect(filter?.getAttribute("y")).toBe("0");
-      expect(filter?.getAttribute("width")).toBe("120");
-      expect(filter?.getAttribute("height")).toBe("60");
+      expect(filter?.getAttribute("width")).toBe("200");
+      expect(filter?.getAttribute("height")).toBe("140");
 
-      const href = filter?.querySelector("feImage")?.getAttribute("href");
+      const map = filter?.querySelector('feImage[result="map"]');
+      expect(map?.getAttribute("x")).toBe("40");
+      expect(map?.getAttribute("y")).toBe("40");
+      const href = map?.getAttribute("href");
       expect(href).toContain("data:image/png");
       const image = new Image();
       image.src = href ?? "";
@@ -827,9 +852,9 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
       const at = (x: number, y: number, channel: number): number =>
         context.getImageData(x, y, 1, 1).data[channel];
 
-      expect(at(2, 30, 0)).toBeGreaterThan(128);
-      expect(at(12, 12, 0)).toBeGreaterThan(128);
-      expect(at(12, 12, 1)).toBeGreaterThan(128);
+      expect(at(2, 30, 0)).toBeLessThan(128);
+      expect(at(12, 12, 0)).toBeLessThan(128);
+      expect(at(12, 12, 1)).toBeLessThan(128);
       handle.destroy();
     },
   );
@@ -972,11 +997,11 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
       expect(bg).toBeTruthy();
       if (!bg) throw new Error("no bg");
       expect(getComputedStyle(bg).backdropFilter).toContain("url(");
-      // Cheap paint-level sanity: the carrier lays out at the lens size and
-      // the referenced filter is live in the document.
+      // Cheap paint-level sanity: the carrier includes its sampling margin
+      // and the referenced filter is live in the document.
       const rect = bg.getBoundingClientRect();
-      expect(rect.width).toBe(120);
-      expect(rect.height).toBe(60);
+      expect(rect.width).toBe(140);
+      expect(rect.height).toBe(80);
       const id = getComputedStyle(bg).backdropFilter.match(/#([^)"']+)/)?.[1];
       expect(document.getElementById(id ?? "")?.isConnected).toBe(true);
 
@@ -986,11 +1011,11 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
   );
 
   it.skipIf(!supportsBackdropUrlFilter())(
-    "keeps the per-frame chain lean: area-adaptive chroma + baked specular overlay",
-    async () => {
+    "keeps the per-frame chain lean: area-adaptive chroma + baked in-chain specular",
+    () => {
       // Backdrop filters re-run over the live backdrop every composited
       // frame, so the chain is trimmed: big lenses collapse chroma to one
-      // displacement pass and specular is baked to a static overlay.
+      // displacement pass and specular is pre-baked to a static bitmap.
       document.body.style.cssText =
         "margin:0;overflow:hidden;background:linear-gradient(90deg, rgb(255,0,0), rgb(0,0,255));";
       setBackground(null);
@@ -1022,23 +1047,46 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
       expect(
         filterOf(smallEl)?.querySelectorAll("feDisplacementMap"),
       ).toHaveLength(3);
-      // No in-chain specular even on the specular lens...
-      expect(filterOf(bigEl)?.querySelector('[result="spec"]')).toBeNull();
-
-      // ...it lands async in the static .lg-spec overlay instead.
-      const spec = await vi.waitFor(() => {
-        const el = bigEl.querySelector<HTMLElement>(":scope > .lg-spec");
-        expect(el).toBeTruthy();
-        return el as HTMLElement;
-      });
-      expect(getComputedStyle(spec).mixBlendMode).toBe("plus-lighter");
-      expect(spec.style.backgroundImage).toContain("data:image/png");
-      // specular 0 → no overlay.
-      expect(smallEl.querySelector(".lg-spec")).toBeNull();
+      expect(filterOf(bigEl)?.querySelectorAll("feImage")).toHaveLength(2);
+      expect(
+        filterOf(bigEl)
+          ?.querySelector('feImage[result="spec"]')
+          ?.getAttribute("href"),
+      ).toContain("data:image/png");
+      // specular 0 → only the displacement map.
+      expect(filterOf(smallEl)?.querySelectorAll("feImage")).toHaveLength(1);
 
       big.destroy();
       small.destroy();
-      expect(bigEl.querySelector(".lg-spec")).toBeNull();
+    },
+  );
+
+  it.skipIf(!supportsBackdropUrlFilter())(
+    "keeps backdrop specular in-filter without a blending child",
+    () => {
+      const lensEl = document.createElement("div");
+      lensEl.style.cssText =
+        "position:fixed;left:20px;top:20px;width:120px;height:60px;";
+      document.body.appendChild(lensEl);
+      const handle = glass(lensEl, {
+        scale: 10,
+        blur: 0,
+        chroma: 0,
+        specular: 0.5,
+      });
+
+      const children = Array.from(lensEl.children);
+      expect(children.length).toBeGreaterThan(0);
+      for (const child of children) {
+        expect(getComputedStyle(child).mixBlendMode).toBe("normal");
+      }
+
+      const bg = lensEl.querySelector<HTMLElement>(":scope > .lg-bg");
+      const id = bg?.style.backdropFilter.match(/#([^)"']+)/)?.[1];
+      const filter = document.getElementById(id ?? "");
+      expect(filter?.querySelectorAll("feImage")).toHaveLength(2);
+
+      handle.destroy();
     },
   );
 
@@ -1113,4 +1161,47 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
       scope.destroy();
     },
   );
+});
+
+describe("browser: native frost chrome", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    document.body.style.cssText = "";
+  });
+
+  it("gives the native degrade tier its dome sheen and deep frost", async () => {
+    document.body.style.cssText =
+      "margin:0;background:linear-gradient(135deg,#f64,#35f);";
+    const scope = createGlassScope({
+      fallback: "blur",
+      budgets: { chromium: 10_000, firefox: 10_000, webkit: 10_000 },
+    });
+    const lens = document.createElement("div");
+    lens.style.cssText =
+      "position:fixed;left:20px;top:20px;width:320px;height:160px;";
+    document.body.appendChild(lens);
+    const handle = scope.glass(lens);
+    await vi.waitFor(() => {
+      expect(lens.dataset.lgBackend).toBe("native");
+    });
+    const sheen = lens.querySelector<HTMLElement>(":scope > .lg-sheen");
+    if (!sheen) throw new Error("sheen missing");
+    // Frost-only dome highlight layered over the directional sheen.
+    expect(getComputedStyle(sheen).backgroundImage).toContain(
+      "radial-gradient",
+    );
+    const bg = lens.querySelector<HTMLElement>(":scope > .lg-bg");
+    if (!bg) throw new Error("bg missing");
+    // Rim frost: light overall blur on the bg, heavy edge blur on the masked
+    // .lg-frost layer painted right above it.
+    expect(getComputedStyle(bg).backdropFilter).toContain("blur(7px)");
+    const frost = lens.querySelector<HTMLElement>(":scope > .lg-frost");
+    if (!frost) throw new Error("frost missing");
+    expect(getComputedStyle(frost).backdropFilter).toContain("blur(22px)");
+    expect(getComputedStyle(frost).maskImage).toContain("radial-gradient");
+    expect(bg.nextElementSibling).toBe(frost);
+
+    handle.destroy();
+    scope.destroy();
+  });
 });

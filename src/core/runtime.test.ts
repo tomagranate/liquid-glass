@@ -3,6 +3,8 @@ import {
   BACKDROP_AGGREGATE_THRESHOLDS,
   BACKGROUND_COPY_AGGREGATE_THRESHOLDS,
   BACKGROUND_COPY_LEAN_THRESHOLDS,
+  backgroundCopyWorkloadVerdict,
+  diagnosticsSnapshot,
   type ScopeRuntime,
   updateBackdropWorkload,
   updateBackgroundCopyWorkload,
@@ -111,39 +113,139 @@ describe("aggregate backdrop workload", () => {
 });
 
 describe("aggregate background-copy workload", () => {
-  it("falls back on WebKit and restores below the hysteresis boundary", async () => {
+  it("includes admitted in diagnostics even before the first copy registers", () => {
+    expect(
+      diagnosticsSnapshot(fakeRuntime().diagnostics).backgroundCopyWorkload,
+    ).toMatchObject({
+      lenses: 0,
+      admitted: 0,
+      devicePixelPassArea: 0,
+      tier: "full",
+      reason: "within-aggregate-background-copy-budget",
+    });
+  });
+
+  it("admits the smallest WebKit copies first with stable insertion ties", async () => {
     const runtime = fakeRuntime();
     const first = vi.fn();
     const second = vi.fn();
-    const one = {};
-    const two = {};
-    updateBackgroundCopyWorkload(runtime, one, {
-      deviceArea: 343_440,
-      passMultiplier: 3,
+    const large = {};
+    const tiedLarge = {};
+    const small = {};
+    updateBackgroundCopyWorkload(runtime, large, {
+      deviceArea: 800_000,
+      passMultiplier: 1,
       engine: "webkit",
       refresh: first,
     });
-    expect(runtime.diagnostics.backgroundCopyWorkload.tier).toBe("full");
-    updateBackgroundCopyWorkload(runtime, two, {
-      deviceArea: 343_440,
-      passMultiplier: 3,
+    updateBackgroundCopyWorkload(runtime, tiedLarge, {
+      deviceArea: 800_000,
+      passMultiplier: 1,
       engine: "webkit",
       refresh: second,
     });
+    expect(backgroundCopyWorkloadVerdict(runtime, large)?.tier).toBe("full");
+    expect(backgroundCopyWorkloadVerdict(runtime, tiedLarge)).toMatchObject({
+      tier: "native",
+      reason: "aggregate-admission-over-copy-budget",
+    });
+
+    updateBackgroundCopyWorkload(runtime, small, {
+      deviceArea: 300_000,
+      passMultiplier: 1,
+      engine: "webkit",
+      refresh: vi.fn(),
+    });
     expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
-      lenses: 2,
-      devicePixelPassArea: 2_060_640,
+      lenses: 3,
+      admitted: 2,
+      devicePixelPassArea: 1_900_000,
+      tier: "partial",
+      reason: "aggregate-admission-over-copy-budget",
+    });
+    expect(backgroundCopyWorkloadVerdict(runtime, small)?.tier).toBe("full");
+    expect(backgroundCopyWorkloadVerdict(runtime, large)?.tier).toBe("full");
+    expect(backgroundCopyWorkloadVerdict(runtime, tiedLarge)?.tier).toBe(
+      "native",
+    );
+    await Promise.resolve();
+    expect(first).not.toHaveBeenCalled();
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it("keeps a giant over-budget lens native while a small sibling refracts", () => {
+    const runtime = fakeRuntime();
+    const giant = {};
+    const small = {};
+    updateBackgroundCopyWorkload(runtime, giant, {
+      deviceArea: 1_600_000,
+      passMultiplier: 1,
+      engine: "webkit",
+      refresh: vi.fn(),
+    });
+    expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
+      lenses: 1,
+      admitted: 0,
       tier: "native",
       reason: "aggregate-background-copy-device-pixel-pass-budget",
     });
-    await Promise.resolve();
-    expect(first).toHaveBeenCalledTimes(1);
-    expect(second).toHaveBeenCalledTimes(1);
+    updateBackgroundCopyWorkload(runtime, small, {
+      deviceArea: 400_000,
+      passMultiplier: 1,
+      engine: "webkit",
+      refresh: vi.fn(),
+    });
 
-    updateBackgroundCopyWorkload(runtime, two, null);
-    expect(runtime.diagnostics.backgroundCopyWorkload.tier).toBe("full");
-    await Promise.resolve();
-    expect(first).toHaveBeenCalledTimes(2);
+    expect(backgroundCopyWorkloadVerdict(runtime, giant)).toMatchObject({
+      tier: "native",
+      reason: "aggregate-background-copy-device-pixel-pass-budget",
+    });
+    expect(backgroundCopyWorkloadVerdict(runtime, small)?.tier).toBe("full");
+    expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
+      lenses: 2,
+      admitted: 1,
+      tier: "partial",
+    });
+  });
+
+  it("requires the exit-hysteresis headroom before re-admitting a boundary lens", () => {
+    const runtime = fakeRuntime();
+    const boundary = {};
+    const sibling = {};
+    const updateBoundary = (deviceArea: number): void => {
+      updateBackgroundCopyWorkload(runtime, boundary, {
+        deviceArea,
+        passMultiplier: 1,
+        engine: "webkit",
+        refresh: vi.fn(),
+      });
+    };
+    updateBoundary(900_000);
+    updateBackgroundCopyWorkload(runtime, sibling, {
+      deviceArea: 600_000,
+      passMultiplier: 1,
+      engine: "webkit",
+      refresh: vi.fn(),
+    });
+
+    updateBoundary(910_000);
+    expect(backgroundCopyWorkloadVerdict(runtime, boundary)?.tier).toBe(
+      "native",
+    );
+    updateBoundary(890_000);
+    updateBoundary(880_000);
+    expect(backgroundCopyWorkloadVerdict(runtime, boundary)?.tier).toBe(
+      "native",
+    );
+    expect(runtime.diagnostics.backgroundCopyWorkload.admitted).toBe(1);
+
+    updateBoundary(400_000);
+    expect(backgroundCopyWorkloadVerdict(runtime, boundary)?.tier).toBe("full");
+    expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
+      admitted: 2,
+      tier: "full",
+      reason: "within-aggregate-background-copy-budget",
+    });
   });
 
   it("keeps Chrome and Firefox dense-copy ceilings above eight calibrated lenses", () => {
@@ -159,7 +261,7 @@ describe("aggregate background-copy workload", () => {
     });
   });
 
-  it("leans eight Firefox copies, falls back when dense, and restores with hysteresis", async () => {
+  it("leans admitted Firefox copies, partially admits a dense set, and restores quality", async () => {
     const runtime = fakeRuntime();
     const keys = Array.from({ length: 12 }, () => ({}));
     const refresh = vi.fn();
@@ -173,6 +275,7 @@ describe("aggregate background-copy workload", () => {
     }
     expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
       lenses: 8,
+      admitted: 8,
       tier: "lean",
       reason: "aggregate-background-copy-lean-device-pixel-pass-budget",
     });
@@ -186,26 +289,29 @@ describe("aggregate background-copy workload", () => {
     }
     expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
       lenses: 12,
-      tier: "native",
-      reason: "aggregate-background-copy-device-pixel-pass-budget",
+      admitted: 11,
+      tier: "partial",
+      reason: "aggregate-admission-over-copy-budget",
     });
     await Promise.resolve();
     for (const key of keys.slice(8))
       updateBackgroundCopyWorkload(runtime, key, null);
     expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
       lenses: 8,
+      admitted: 8,
       tier: "lean",
     });
     for (const key of keys.slice(4, 8))
       updateBackgroundCopyWorkload(runtime, key, null);
     expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
       lenses: 4,
+      admitted: 4,
       tier: "full",
       reason: "within-aggregate-background-copy-budget",
     });
   });
 
-  it("preserves eight full Chrome copies and routes a dense group to native", () => {
+  it("preserves eight full Chrome copies and partially admits a dense group", () => {
     const runtime = fakeRuntime();
     for (let index = 0; index < 8; index++) {
       updateBackgroundCopyWorkload(
@@ -219,7 +325,10 @@ describe("aggregate background-copy workload", () => {
         },
       );
     }
-    expect(runtime.diagnostics.backgroundCopyWorkload.tier).toBe("full");
+    expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
+      admitted: 8,
+      tier: "full",
+    });
     for (let index = 8; index < 12; index++) {
       updateBackgroundCopyWorkload(
         runtime,
@@ -232,6 +341,11 @@ describe("aggregate background-copy workload", () => {
         },
       );
     }
-    expect(runtime.diagnostics.backgroundCopyWorkload.tier).toBe("native");
+    expect(runtime.diagnostics.backgroundCopyWorkload).toMatchObject({
+      lenses: 12,
+      admitted: 11,
+      tier: "partial",
+      reason: "aggregate-admission-over-copy-budget",
+    });
   });
 });

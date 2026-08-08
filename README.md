@@ -395,6 +395,31 @@ The library absorbs the things a refraction effect normally pushes onto you:
 - **Nested surfaces are discouraged.** They produce a development warning;
   bounded siblings have unambiguous filter ownership and budgets.
 
+## Browser support
+
+Tell the library what sits behind the glass and it chooses the fastest safe
+route for each browser, falling back before the effect hurts the page.
+
+| What you are refracting | Chrome | Safari | Firefox |
+| --- | --- | --- | --- |
+| Automatic glass | Live page | Wallpaper copy | Wallpaper copy |
+| Live UI surface | Full effect | Full effect\* | Full effect\* |
+| Video & canvas | Full effect | Full effect | Full effect |
+| Fallback appearance | Blur or tint | Blur or tint | Blur or tint |
+
+\* Keep registered UI areas bounded in Safari and Firefox. Large or dense areas
+automatically become native blur/tint instead of breaking.
+
+Pick the right kind of glass by what sits behind it. **Automatic glass**
+(`<Glass>`) suits navigation, floating buttons, and wallpaper-backed cards;
+Chrome bends the live page while Safari and Firefox use a matching background
+copy. A **live UI surface** (`<GlassSurface>` + a `background: false` lens) is
+the best cross-browser choice for controls, charts, and draggable lenses—keep it
+bounded to a card or section. A **media surface** (`<GlassMediaSurface>`) is for
+players, maps, games, and data visualizations, because browser filters cannot
+read moving video or canvas. When an effect is oversized, dense, or over budget,
+the component stays readable with native blur or tint.
+
 ## Browser strategy
 
 | Engine | Default wallpaper/live page route | Bounded DOM surfaces | Video/canvas |

@@ -14,9 +14,10 @@
 
 /* Bent page-background copy: ONE element carrying the painted copy and the
    SVG filter (or a backdrop-filter: a per-lens `url()` one on the Chromium
-   backdrop tier, a native blur in the Safari degrade tier). Copy tier: sized
-   lens + sampling margin and pulled back by -margin via an inline transform;
-   the .lg host clips the overhang. Backdrop tier: inset 0, no transform. */
+   backdrop tier, a native blur in the Safari degrade tier). Both refracting
+   tiers use a sampling margin: the copy tier pulls back via transform and is
+   clipped by the host; the backdrop tier uses negative left/top offsets and
+   clips its own output so its expanded backdrop input remains available. */
 .lg-bg {
   position: absolute;
   top: 0;
@@ -24,6 +25,35 @@
   z-index: 0;
   pointer-events: none;
   background-repeat: no-repeat;
+}
+
+/* Backdrop tier only: carries the tint + outer shadow ABOVE the backdrop
+   layer. Anything painted below .lg-bg lands in Chromium's backdrop input,
+   so a host-level shadow gets displaced into the rim as a double ring. */
+.lg-chrome {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Native degrade tier only: the edge half of the rim-frost. The .lg-bg keeps
+   a light overall blur so content behind stays recognizable; this layer adds
+   a heavy blur masked to a ring, echoing the refractive tiers' clear-middle /
+   frosted-bevel material without any displacement work. */
+.lg-frost {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  -webkit-mask-image: radial-gradient(
+    130% 130% at 50% 50%,
+    transparent 46%,
+    black 78%
+  );
+  mask-image: radial-gradient(130% 130% at 50% 50%, transparent 46%, black 78%);
 }
 
 /* CSS rim light + directional sheen. */
@@ -35,24 +65,8 @@
   border-radius: inherit;
 }
 
-/* Baked specular highlight (Chromium backdrop tier only). The highlight
-   derives purely from the static displacement map, so instead of an in-chain
-   specular pass re-running over the backdrop every composited frame it is
-   rendered once to a bitmap; plus-lighter reproduces the chain's arithmetic
-   composite (k2·spec + lens) exactly. Core-created, never adopted. */
-.lg-spec {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  border-radius: inherit;
-  mix-blend-mode: plus-lighter;
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-}
-
 /* Consumer children stay crisp and interactive on top. */
-.lg > :not(.lg-sheen):not(.lg-bg):not(.lg-spec) {
+.lg > :not(.lg-sheen):not(.lg-bg):not(.lg-chrome):not(.lg-frost) {
   position: relative;
   z-index: 2;
 }

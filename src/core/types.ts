@@ -176,7 +176,9 @@ export interface GlassDiagnostics {
   readonly backgroundCopyWorkload: {
     readonly lenses: number;
     readonly devicePixelPassArea: number;
-    readonly tier: "full" | "lean" | "native";
+    readonly tier: "full" | "lean" | "native" | "partial";
+    /** Lenses currently admitted to the refractive copy tier. */
+    readonly admitted: number;
     readonly reason: string;
   };
   readonly policy: readonly {

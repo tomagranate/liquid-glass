@@ -3,9 +3,11 @@
  * ------
  * The displacement map: a small PNG drawn on a `<canvas>`. R/G encode how far
  * each pixel bends in x/y (128 = no shift); B carries an optional specular
- * value. The lens is a rounded-rectangle signed-distance field: bending is
- * concentrated in a rim of thickness `depth` and fades to zero toward the
- * centre — a clear middle with a refractive bevel, like real curved glass.
+ * value. A second synchronous generator renders that same specular field as
+ * a white alpha bitmap for the Chromium backdrop filter chain. The lens is a
+ * rounded-rectangle signed-distance field: bending is concentrated in a rim
+ * of thickness `depth` and fades to zero toward the centre — a clear middle
+ * with a refractive bevel, like real curved glass.
  */
 
 const clampByte = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v) | 0;
@@ -165,47 +167,41 @@ export function generateDisplacementMap(
   return canvas.toDataURL("image/png");
 }
 
-export interface SpecularHighlightOptions {
-  /** the lens's displacement map (data URI) — the SAME map its filter uses,
-   *  so the highlight stays registered with the refraction */
-  mapUrl: string;
+export interface SpecularHighlightMapOptions {
   /** lens width, CSS px */
   width: number;
   /** lens height, CSS px */
   height: number;
-  /** specular blend strength, 0..1 */
-  specular: number;
-  /** super-sampling factor */
+  /** corner radius, CSS px */
+  radius?: number;
+  /** refracting rim thickness, CSS px */
+  depth?: number;
+  /** super-sampling factor for a crisp map */
   dpr?: number;
+  /** specular strength, 0..1 */
+  specular: number;
+  /** light direction, degrees */
+  specularAngle?: number;
 }
 
 /**
- * Bake the specular pass into a static bitmap (backdrop tier). A backdrop
- * filter re-runs over the live backdrop every composited frame, but the
- * specular term derives purely from the static displacement map, so it is
- * rendered once instead: white with per-pixel alpha
- * `max(0, B − 128/255) · specular`, which under `mix-blend-mode:
- * plus-lighter` adds exactly what the in-chain feColorMatrix + arithmetic
- * feComposite (`k2·spec + lens`) adds. The map is a data URI (same-origin),
- * so the canvas readback is taint-free; decode is awaited so callers must
- * not block on this. Resolves null when decode or a 2D context is
- * unavailable.
+ * Render the displacement map's specular field directly as a white alpha
+ * bitmap. It is composited inside the Chromium backdrop SVG filter; keeping
+ * it in-chain avoids a blending sibling, which would make the panel a
+ * backdrop root and leave the filter sampling an empty (black) interior.
  */
-export async function bakeSpecularHighlight(
-  o: SpecularHighlightOptions,
-): Promise<string | null> {
-  const { mapUrl, width, height, specular, dpr = 2 } = o;
-  if (typeof Image === "undefined" || typeof document === "undefined") {
-    return null;
-  }
-  const img = new Image();
-  img.src = mapUrl;
-  try {
-    await img.decode();
-  } catch {
-    return null;
-  }
-
+export function generateSpecularHighlight(
+  o: SpecularHighlightMapOptions,
+): string | null {
+  const {
+    width,
+    height,
+    radius = 0,
+    depth = 12,
+    dpr = 2,
+    specular,
+    specularAngle = 135,
+  } = o;
   const w = Math.max(1, Math.round(width * dpr));
   const h = Math.max(1, Math.round(height * dpr));
   const canvas = document.createElement("canvas");
@@ -213,18 +209,53 @@ export async function bakeSpecularHighlight(
   canvas.height = h;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  ctx.drawImage(img, 0, 0, w, h);
 
-  const image = ctx.getImageData(0, 0, w, h);
-  const data = image.data;
-  for (let i = 0; i < data.length; i += 4) {
-    // Byte math: normalized alpha = specular · (B − 128)/255.
-    const alpha = Math.max(0, data[i + 2] - 128) * specular;
-    data[i] = 255;
-    data[i + 1] = 255;
-    data[i + 2] = 255;
-    data[i + 3] = clampByte(alpha);
+  const img = ctx.createImageData(w, h);
+  const data = img.data;
+  const cx = w / 2;
+  const cy = h / 2;
+  const hw = cx;
+  const hh = cy;
+  const r = Math.min(Math.max(0, radius * dpr), Math.min(hw, hh));
+  const rim = Math.max(1, depth * dpr);
+  const la = (specularAngle * Math.PI) / 180;
+  const lx = Math.cos(la);
+  const ly = Math.sin(la);
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = (y * w + x) * 4;
+      const px = x + 0.5 - cx;
+      const py = y + 0.5 - cy;
+      const sdf = sdfRoundRect(px, py, hw, hh, r);
+
+      data[idx] = 255;
+      data[idx + 1] = 255;
+      data[idx + 2] = 255;
+      if (sdf >= 0) {
+        data[idx + 3] = 0;
+        continue;
+      }
+
+      let gx =
+        sdfRoundRect(px + 1, py, hw, hh, r) -
+        sdfRoundRect(px - 1, py, hw, hh, r);
+      let gy =
+        sdfRoundRect(px, py + 1, hw, hh, r) -
+        sdfRoundRect(px, py - 1, hw, hh, r);
+      const glen = Math.hypot(gx, gy) || 1;
+      gx /= glen;
+      gy /= glen;
+
+      const mag = 1 - smoothstep(-sdf / rim);
+      const facing = Math.max(0, gx * lx + gy * ly);
+      const s = specular * mag * facing ** 2;
+      // The second specular factor intentionally matches the former
+      // displacement-blue-channel + baked-overlay pipeline byte-for-byte.
+      data[idx + 3] = clampByte(127 * Math.min(1, s) * specular);
+    }
   }
-  ctx.putImageData(image, 0, 0);
+
+  ctx.putImageData(img, 0, 0);
   return canvas.toDataURL("image/png");
 }

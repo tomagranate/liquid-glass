@@ -21,7 +21,13 @@
  * On Chromium (the only engine that renders `backdrop-filter: url()`), rules
  * 2–5 collapse into the backdrop tier: `.lg-bg` carries a per-lens
  * `backdrop-filter: url(#filter)` the compositor samples at composite time —
- * zero scroll lag, no surface registrations, no scroll work.
+ * zero scroll lag, no surface registrations, no scroll work. Its baked
+ * specular bitmap is composited inside that SVG filter: a plus-lighter sibling
+ * would turn the panel into Chromium's backdrop root and black out the lens.
+ * Tint and outer shadow sit in a later `.lg-chrome` sibling so Chromium cannot
+ * feed the panel's own chrome back through the displacement map. This tier
+ * leaves host overflow visible; consumer children that need radius clipping
+ * must set their own border radius and overflow.
  */
 
 import "./liquid-glass.css";
@@ -45,7 +51,7 @@ import {
   subscribeGeometry,
   subscribeLive,
 } from "./geometry.js";
-import { bakeSpecularHighlight, generateDisplacementMap } from "./map.js";
+import { generateDisplacementMap, generateSpecularHighlight } from "./map.js";
 import { listMediaSurfaces, MediaSurface } from "./media.js";
 import { createPanel, type PanelChrome } from "./panel.js";
 import {
@@ -54,6 +60,7 @@ import {
   type PolicyDecision,
 } from "./policy.js";
 import {
+  backgroundCopyWorkloadVerdict,
   recordPolicy,
   type ScopeRuntime,
   updateBackdropWorkload,
@@ -88,7 +95,18 @@ const DEFAULTS = {
   shadow: "0 8px 30px rgba(0,0,0,0.25)",
 };
 
-const NATIVE_BACKDROP = "blur(10px) saturate(1.5)";
+/**
+ * Native degrade tier: no refraction, so the frost itself has to carry the
+ * material. Two layers echo the refractive tiers' clear-middle/frosted-bevel
+ * shape: `.lg-bg` keeps a light overall blur (content behind stays
+ * recognizable), and `.lg-frost` adds a heavy blur masked to an edge ring
+ * (mask in liquid-glass.css). Saturation/brightness lifts read as polished
+ * glass rather than a plain smear; recipes picked from side-by-side matrices
+ * over the demo wallpapers, paired with the `frost` sheen in
+ * panel.applyChrome.
+ */
+const NATIVE_BACKDROP = "blur(7px) saturate(1.8) brightness(1.04)";
+const NATIVE_EDGE_FROST = "blur(22px) saturate(1.9) brightness(1.07)";
 
 const PRESETS: Record<GlassPreset, Partial<GlassOptions>> = {
   thin: {
@@ -292,7 +310,6 @@ export function glass(
 ): GlassHandle {
   const opts: GlassOptions = { ...options };
   const panel = createPanel(element);
-  panel.applyChrome(chromeOf(opts));
   const originalBackendAttribute = element.getAttribute("data-lg-backend");
 
   // Chromium zero-lag tier: `.lg-bg` carries a per-lens `backdrop-filter:
@@ -338,12 +355,6 @@ export function glass(
   let bgUnsubscribe: (() => void) | null = null;
   let bgClip: SVGClipPathElement | null = null;
   let bgClipPath: SVGPathElement | null = null;
-
-  // Baked specular overlay state (backdrop tier only; core-created, never
-  // adopted). The token discards stale async bakes.
-  let specEl: HTMLElement | null = null;
-  let specSig = "";
-  let specBakeToken = 0;
 
   const ro =
     typeof ResizeObserver === "undefined"
@@ -405,6 +416,10 @@ export function glass(
       dpr: typeof window === "undefined" ? 1 : window.devicePixelRatio || 1,
       budgets: runtime?.budgets,
     });
+    const copyVerdict =
+      desiredBackend === "background-copy"
+        ? backgroundCopyWorkloadVerdict(runtime, key)
+        : null;
     if (
       desiredBackend === "backdrop" &&
       decision.backend === "backdrop" &&
@@ -424,7 +439,7 @@ export function glass(
     if (
       desiredBackend === "background-copy" &&
       decision.backend === "background-copy" &&
-      runtime?.diagnostics.backgroundCopyWorkload.tier === "lean"
+      copyVerdict?.tier === "lean"
     ) {
       decision = {
         ...decision,
@@ -434,18 +449,18 @@ export function glass(
           chroma: 0,
           specular: 0,
         },
-        reason: runtime.diagnostics.backgroundCopyWorkload.reason,
+        reason: copyVerdict.reason,
       };
     }
     if (
       desiredBackend === "background-copy" &&
       decision.backend === "background-copy" &&
-      runtime?.diagnostics.backgroundCopyWorkload.tier === "native"
+      copyVerdict?.tier === "native"
     ) {
       decision = {
         ...decision,
         backend: material.fallback === "none" ? "none" : "native",
-        reason: runtime.diagnostics.backgroundCopyWorkload.reason,
+        reason: copyVerdict.reason,
       };
     }
     recordPolicy(runtime, decision);
@@ -532,10 +547,8 @@ export function glass(
         budgets: runtime.budgets,
       });
       if (standalone.backend === "backdrop") {
-        const physicalDpr = window.devicePixelRatio || 1;
         updateBackdropWorkload(runtime, key, {
-          deviceArea:
-            lensRect.width * lensRect.height * physicalDpr * physicalDpr,
+          deviceArea: standalone.deviceArea,
           passMultiplier: standalone.effectiveMaterial.chroma > 0 ? 3 : 1,
           quality: desired.quality,
           refresh: () => sync(true),
@@ -699,55 +712,21 @@ export function glass(
     bg.style.clipPath = `url(#${bgClip.id})`;
   }
 
+  /** Attach or remove the native tier's masked edge-frost layer. */
+  function syncNativeFrost(on: boolean): void {
+    if (!on) {
+      panel.removeFrostLayer();
+      return;
+    }
+    const frost = panel.ensureFrostLayer();
+    frost.style.backdropFilter = NATIVE_EDGE_FROST;
+    frost.style.setProperty("-webkit-backdrop-filter", NATIVE_EDGE_FROST);
+  }
+
   function unsubscribeBg(): void {
     bgUnsubscribe?.();
     bgUnsubscribe = null;
     bgPaintSig = "";
-  }
-
-  function removeSpecOverlay(): void {
-    specBakeToken++;
-    specEl?.remove();
-    specEl = null;
-    specSig = "";
-  }
-
-  /**
-   * Backdrop tier: the in-chain specular pass is baked once into a static
-   * `.lg-spec` overlay (the highlight derives purely from the static
-   * displacement map — no reason to pay for it on every composited frame).
-   * Regenerated whenever the map regenerates; async so creation never blocks.
-   */
-  function syncSpecOverlay(
-    width: number,
-    height: number,
-    material: ResolvedLensMaterial,
-    force: boolean,
-  ): void {
-    if (material.specular <= 0 || !bgMapUrl) {
-      removeSpecOverlay();
-      return;
-    }
-    const sig = `${bgMapSig}|${material.specular}`;
-    if (!force && sig === specSig && specEl) return;
-    specSig = sig;
-    const token = ++specBakeToken;
-    void bakeSpecularHighlight({
-      mapUrl: bgMapUrl,
-      width,
-      height,
-      specular: material.specular,
-      dpr: material.dpr,
-    }).then((url) => {
-      if (destroyed || token !== specBakeToken || !url) return;
-      if (!specEl) {
-        specEl = document.createElement("div");
-        specEl.classList.add("lg-spec");
-        specEl.setAttribute("aria-hidden", "true");
-        panel.sheen.after(specEl);
-      }
-      specEl.style.backgroundImage = `url("${url}")`;
-    });
   }
 
   function updateBg(
@@ -806,9 +785,6 @@ export function glass(
       updateBackgroundCopyWorkload(runtime, key, null);
     }
 
-    if (mode !== "backdrop") removeSpecOverlay();
-    panel.applyChrome(chromeOf(opts, anyNative && fallback === "none"));
-
     // A content surface's native tier persists without rebuilding while its
     // lenses move. Re-record that active decision at the contributing lens so
     // bounded policy history cannot evict the explanation for visible output.
@@ -820,7 +796,14 @@ export function glass(
     }
 
     if (mode === "hidden") {
+      element.style.overflow = "hidden";
+      panel.applyChrome(
+        chromeOf(opts, anyNative && fallback === "none"),
+        "host",
+        anyNative && fallback !== "none",
+      );
       unsubscribeBg();
+      syncNativeFrost(false);
       clearBgClip(panel.bg ?? undefined);
       if (panel.bg) panel.bg.style.display = "none";
       if (anyNative) return fallback === "none" ? "none" : "native";
@@ -831,6 +814,8 @@ export function glass(
     bg.style.display = "";
 
     if (mode === "native") {
+      element.style.overflow = "hidden";
+      panel.applyChrome(chromeOf(opts), "host", true);
       // Safari over-budget degrade tier: native backdrop blur, no SVG filter,
       // no painted copy (the real page shows through the blur).
       unsubscribeBg();
@@ -839,11 +824,15 @@ export function glass(
       bg.style.background = "none";
       bg.style.backgroundImage = "";
       bg.style.backgroundColor = "";
+      bg.style.left = "0px";
+      bg.style.top = "0px";
       bg.style.width = "100%";
       bg.style.height = "100%";
       bg.style.transform = "translateZ(0)";
+      bg.style.borderRadius = "inherit";
       bg.style.backdropFilter = NATIVE_BACKDROP;
       bg.style.setProperty("-webkit-backdrop-filter", NATIVE_BACKDROP);
+      syncNativeFrost(true);
       return "native";
     }
 
@@ -858,10 +847,7 @@ export function glass(
       bg.style.background = "none";
       bg.style.backgroundImage = "";
       bg.style.backgroundColor = "";
-      bg.style.width = "100%";
-      bg.style.height = "100%";
       bg.style.transform = "";
-      bg.style.borderRadius = "inherit";
       bg.style.filter = "";
       bg.style.removeProperty("-webkit-filter");
       clearBgClip(bg);
@@ -871,19 +857,50 @@ export function glass(
       const decision = effectiveMaterial(width, height, "backdrop");
       const material = decision.material;
       if (decision.backend !== "backdrop") {
-        panel.applyChrome(chromeOf(opts, decision.backend === "none"));
+        element.style.overflow = "hidden";
+        panel.applyChrome(
+          chromeOf(opts, decision.backend === "none"),
+          "host",
+          decision.backend === "native",
+        );
+        bg.style.left = "0px";
+        bg.style.top = "0px";
+        bg.style.width = "100%";
+        bg.style.height = "100%";
+        bg.style.borderRadius = "inherit";
         const nativeFilter =
           decision.backend === "native" && (opts.fallback ?? "blur") === "blur"
             ? NATIVE_BACKDROP
             : "";
         bg.style.backdropFilter = nativeFilter;
         bg.style.setProperty("-webkit-backdrop-filter", nativeFilter);
+        syncNativeFrost(nativeFilter !== "");
         return decision.backend;
       }
+      element.style.overflow = "visible";
+      syncNativeFrost(false);
+      const chrome = chromeOf(opts);
+      panel.applyChrome(chrome, "layer");
+      const margin = filterReach(
+        material.scale,
+        material.blur,
+        material.chroma,
+      );
+      bg.style.left = `${-margin}px`;
+      bg.style.top = `${-margin}px`;
+      bg.style.width = `calc(100% + ${2 * margin}px)`;
+      bg.style.height = `calc(100% + ${2 * margin}px)`;
+      bg.style.borderRadius = "0";
+      const radiusCss =
+        typeof chrome.radius === "string"
+          ? chrome.radius
+          : `${chrome.radius}px`;
+      bg.style.clipPath = `inset(${margin}px round ${radiusCss})`;
       const filterSig = [
         "backdrop",
         width,
         height,
+        margin,
         material.radius,
         material.depth,
         material.scale,
@@ -916,15 +933,27 @@ export function glass(
             dpr: material.dpr,
             specular: material.specular,
             specularAngle: material.specularAngle,
-            // Chromium's backdrop input contains only the host border box.
-            // Inward refraction keeps rounded rims sampling real pixels;
-            // outward maps create transparent corner wedges on pills.
-            amplitude: -1,
+            // Convex refraction bends outward. The oversized backdrop carrier
+            // supplies real rim samples, while the carrier's output clip
+            // shapes the visible result without constraining backdrop input.
+            amplitude: 1,
           });
           if (runtime) runtime.diagnostics.mapRegenerations++;
           bgMapSig = mapSig;
         }
         if (bgMapUrl) {
+          const specUrl =
+            material.specular > 0
+              ? generateSpecularHighlight({
+                  width,
+                  height,
+                  radius: material.radius,
+                  depth: material.depth,
+                  dpr: material.dpr,
+                  specular: material.specular,
+                  specularAngle: material.specularAngle,
+                })
+              : null;
           const id = nextId();
           const filter = buildBackdropFilter({
             id,
@@ -934,6 +963,8 @@ export function glass(
             scale: material.scale,
             blur: material.blur,
             chroma: material.chroma,
+            margin,
+            specUrl,
           });
           getDefs().appendChild(filter);
           if (runtime) runtime.diagnostics.filterRebuilds++;
@@ -944,7 +975,6 @@ export function glass(
           bg.style.setProperty("-webkit-backdrop-filter", `url(#${id})`);
         }
       }
-      syncSpecOverlay(width, height, material, force);
       return "backdrop";
     }
 
@@ -952,15 +982,27 @@ export function glass(
     // SVG filter, sized lens + sampling margin and pulled back by -margin so
     // the rim never samples past the copy. Moves ride background-position
     // (never SVG filter mutation), which keeps static lenses cheap on Safari.
+    element.style.overflow = "hidden";
+    panel.applyChrome(chromeOf(opts));
+    syncNativeFrost(false);
     bg.style.backdropFilter = "";
     bg.style.removeProperty("-webkit-backdrop-filter");
+    bg.style.left = "0px";
+    bg.style.top = "0px";
+    bg.style.width = "100%";
+    bg.style.height = "100%";
+    bg.style.transform = "";
     bg.style.borderRadius = "";
     const width = Math.round(lensRect.width);
     const height = Math.round(lensRect.height);
     const decision = effectiveMaterial(width, height, "background-copy");
     const material = decision.material;
     if (decision.backend !== "background-copy") {
-      panel.applyChrome(chromeOf(opts, decision.backend === "none"));
+      panel.applyChrome(
+        chromeOf(opts, decision.backend === "none"),
+        "host",
+        decision.backend === "native",
+      );
       clearBgFilter(bg);
       clearBgClip(bg);
       bg.style.background = "none";
@@ -970,6 +1012,7 @@ export function glass(
           : "";
       bg.style.backdropFilter = nativeFilter;
       bg.style.setProperty("-webkit-backdrop-filter", nativeFilter);
+      syncNativeFrost(nativeFilter !== "");
       return decision.backend;
     }
     const margin = filterReach(material.scale, material.blur, material.chroma);
@@ -1125,7 +1168,6 @@ export function glass(
       if (destroyed) return;
       const prevSig = materialSig();
       Object.assign(opts, patch);
-      panel.applyChrome(chromeOf(opts));
       sync(materialSig() !== prevSig);
       syncLive();
     },
@@ -1153,7 +1195,6 @@ export function glass(
       bgFilterEl?.remove();
       bgFilterEl = null;
       clearBgClip(panel.bg ?? undefined);
-      removeSpecOverlay();
       if (originalBackendAttribute == null) {
         element.removeAttribute("data-lg-backend");
       } else {

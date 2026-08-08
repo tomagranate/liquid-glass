@@ -1,12 +1,12 @@
 /**
  * panel.ts
  * --------
- * The glass panel's chrome: the `.lg` host (radius/tint/shadow, clipping,
- * stacking) plus its `.lg-sheen` (CSS rim light + directional sheen) and
- * `.lg-bg` (bent background copy) layers. Existing `.lg-sheen`/`.lg-bg`
- * children are ADOPTED (React renders and owns them); missing ones are
- * created. `destroy()` restores every inline style/class this module wrote
- * and removes only the nodes it created.
+ * The glass panel's chrome: the `.lg` host (radius/clipping/stacking), its
+ * `.lg-sheen` (CSS rim light + directional sheen), `.lg-bg` (bent background
+ * copy), and optional core-owned `.lg-chrome` (backdrop-tier tint/shadow)
+ * layers. Existing `.lg-sheen`/`.lg-bg` children are ADOPTED (React renders
+ * and owns them); missing ones are created. `destroy()` restores every inline
+ * style/class this module wrote and removes only the nodes it created.
  */
 
 import { isSafariEngine } from "./filter.js";
@@ -27,8 +27,24 @@ export interface Panel {
   readonly bg: HTMLElement | null;
   /** Adopt or create the `.lg-bg` layer. */
   ensureBg(): HTMLElement;
-  /** Apply the CSS-only material (cheap; no filter/map work). */
-  applyChrome(chrome: PanelChrome): void;
+  /** Create the core-owned tint/shadow layer immediately above `.lg-bg`. */
+  ensureChromeLayer(): HTMLElement;
+  /** Remove the core-owned tint/shadow layer, if present. */
+  removeChromeLayer(): void;
+  /** Create the native-tier rim-frost layer immediately above `.lg-bg`. */
+  ensureFrostLayer(): HTMLElement;
+  /** Remove the rim-frost layer, if present. */
+  removeFrostLayer(): void;
+  /**
+   * Apply the CSS-only material (cheap; no filter/map work). `frost` is the
+   * native-tier variant: with no refraction to sell the material, the sheen
+   * gains a radial dome highlight and a floor on the rim strength.
+   */
+  applyChrome(
+    chrome: PanelChrome,
+    carrier?: "host" | "layer",
+    frost?: boolean,
+  ): void;
   destroy(): void;
 }
 
@@ -75,6 +91,8 @@ export function createPanel(host: HTMLElement): Panel {
   const adoptedBg = directChildByClass(host, "lg-bg");
   const adoptedBgCss = adoptedBg?.style.cssText ?? "";
   let bg: HTMLElement | null = adoptedBg;
+  let chromeLayer: HTMLElement | null = null;
+  let frostLayer: HTMLElement | null = null;
   // Composited-layer promotion is Safari-only (see liquid-glass.css).
   if (adoptedBg && isSafariEngine()) adoptedBg.classList.add("lg-composited");
 
@@ -106,15 +124,55 @@ export function createPanel(host: HTMLElement): Panel {
       host.prepend(bg);
       return bg;
     },
-    applyChrome(chrome) {
+    ensureChromeLayer() {
+      if (chromeLayer) return chromeLayer;
+      chromeLayer = document.createElement("div");
+      chromeLayer.classList.add("lg-chrome");
+      chromeLayer.setAttribute("aria-hidden", "true");
+      if (bg) bg.after(chromeLayer);
+      else host.prepend(chromeLayer);
+      return chromeLayer;
+    },
+    removeChromeLayer() {
+      chromeLayer?.remove();
+      chromeLayer = null;
+    },
+    ensureFrostLayer() {
+      if (frostLayer) return frostLayer;
+      frostLayer = document.createElement("div");
+      frostLayer.classList.add("lg-frost");
+      frostLayer.setAttribute("aria-hidden", "true");
+      if (bg) bg.after(frostLayer);
+      else host.prepend(frostLayer);
+      return frostLayer;
+    },
+    removeFrostLayer() {
+      frostLayer?.remove();
+      frostLayer = null;
+    },
+    applyChrome(chrome, carrier = "host", frost = false) {
       host.style.borderRadius =
         typeof chrome.radius === "string"
           ? chrome.radius
           : `${chrome.radius}px`;
-      host.style.background = chrome.tint;
-      host.style.boxShadow = chrome.shadow;
+      if (carrier === "layer") {
+        const layer = panel.ensureChromeLayer();
+        host.style.background = "none";
+        host.style.boxShadow = "none";
+        layer.style.background = chrome.tint;
+        layer.style.boxShadow = chrome.shadow;
+      } else {
+        panel.removeChromeLayer();
+        host.style.background = chrome.tint;
+        host.style.boxShadow = chrome.shadow;
+      }
 
-      const k = chrome.rimLight;
+      // Frost floors the rim strength (an explicit rimLight: 0 still wins —
+      // the consumer asked for no rim) so the degrade tier keeps a glass edge.
+      const k =
+        frost && chrome.rimLight > 0
+          ? Math.max(chrome.rimLight, 0.95)
+          : chrome.rimLight;
       sheen.style.boxShadow = [
         `inset 0 1px 1.5px rgba(255,255,255,${0.9 * k})`,
         `inset 1px 0 1px rgba(255,255,255,${0.35 * k})`,
@@ -122,9 +180,17 @@ export function createPanel(host: HTMLElement): Panel {
         `inset 0 -1.5px 2px rgba(0,0,0,${0.25 * k})`,
         `inset 0 0 0 1px rgba(255,255,255,${0.25 * k})`,
       ].join(", ");
-      sheen.style.background = `linear-gradient(${chrome.specularAngle + 90}deg, rgba(255,255,255,${0.18 * k}) 0%, rgba(255,255,255,0) 38%, rgba(255,255,255,0) 64%, rgba(255,255,255,${0.08 * k}) 100%)`;
+      const directional = `linear-gradient(${chrome.specularAngle + 90}deg, rgba(255,255,255,${0.18 * k}) 0%, rgba(255,255,255,0) 38%, rgba(255,255,255,0) 64%, rgba(255,255,255,${0.08 * k}) 100%)`;
+      // The dome highlight fakes the curvature the missing refraction would
+      // otherwise convey; on refractive tiers it would fight the real bend
+      // and the baked specular, so it is frost-only.
+      sheen.style.background = frost
+        ? `radial-gradient(120% 90% at 50% -30%, rgba(255,255,255,${0.2 * k}) 0%, rgba(255,255,255,0) 55%), ${directional}`
+        : directional;
     },
     destroy() {
+      panel.removeChromeLayer();
+      panel.removeFrostLayer();
       host.classList.remove("lg");
       if (shouldRestorePosition) host.style.position = originalStyle.position;
       host.style.overflow = originalStyle.overflow;

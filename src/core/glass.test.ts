@@ -1,28 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetBackground, setBackground } from "./background.js";
 import { glass, unionCovers } from "./glass.js";
-import { bakeSpecularHighlight, generateDisplacementMap } from "./map.js";
+import { generateDisplacementMap, generateSpecularHighlight } from "./map.js";
 import { createMediaSurface, type MediaSurface } from "./media.js";
 import { createGlassScope } from "./scope.js";
 import { type ContentSurface, createSurface } from "./surfaces.js";
 
 // jsdom has no canvas rasteriser; stand in a deterministic map generator that
 // encodes the inputs we care about (dimensions + per-lens amplitude), and a
-// specular bake that encodes its inputs the same way.
+// synchronous specular generator that encodes its inputs the same way.
 vi.mock("./map.js", () => ({
   generateDisplacementMap: vi.fn(
     (o: { width: number; height: number; amplitude?: number }) =>
       `data:image/png,map-${o.width}x${o.height}-a${o.amplitude ?? 1}`,
   ),
-  bakeSpecularHighlight: vi.fn(
-    async (o: { width: number; height: number; specular: number }) =>
+  generateSpecularHighlight: vi.fn(
+    (o: { width: number; height: number; specular: number }) =>
       `data:image/png,spec-${o.width}x${o.height}-s${o.specular}`,
   ),
 }));
-
-/** Let the async specular bake (mocked, but still a promise) settle. */
-const settleBake = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 0));
 
 const SAFARI_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15";
@@ -585,6 +581,46 @@ describe("glass routing", () => {
       expect(surfaceEl.classList.contains("lg-composited")).toBe(false);
     });
 
+    it("keeps admitted background copies refractive when the aggregate outcome is partial", () => {
+      vi.stubGlobal("devicePixelRatio", 2);
+      const scope = createGlassScope({ quality: "balanced", fallback: "blur" });
+      cleanups.push(() => scope.destroy());
+      const handles = Array.from({ length: 4 }, (_, index) => {
+        const lensEl = addEl();
+        setRect(lensEl, {
+          left: 20 + index * 120,
+          top: 20,
+          width: 100,
+          height: 50,
+        });
+        return scope.glass(lensEl, {
+          background: "linear-gradient(135deg,#f64,#35f)",
+          chroma: 0.4,
+        });
+      });
+
+      expect(handles.some((handle) => handle.backends[0] === "native")).toBe(
+        true,
+      );
+      expect(
+        handles.some((handle) => handle.backends[0] === "background-copy"),
+      ).toBe(true);
+      expect(scope.getDiagnostics().backgroundCopyWorkload).toMatchObject({
+        lenses: 4,
+        tier: "partial",
+        reason: "aggregate-admission-over-copy-budget",
+      });
+      expect(
+        scope
+          .getDiagnostics()
+          .policy.some(
+            (decision) =>
+              decision.backend === "native" &&
+              decision.reason === "aggregate-admission-over-copy-budget",
+          ),
+      ).toBe(true);
+    });
+
     it("routes an over-budget surface to the native backdrop-filter tier", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const surfaceEl = addEl();
@@ -614,6 +650,11 @@ describe("glass routing", () => {
       expect(bg?.style.display).not.toBe("none");
       expect(bg?.style.background).toBe("none");
       expect(bg?.style.filter).toBe("");
+      expect(bg?.style.clipPath).toBe("");
+      expect(lensEl.style.overflow).toBe("hidden");
+      expect(lensEl.style.background).toContain("0.06");
+      expect(lensEl.style.boxShadow).not.toBe("none");
+      expect(lensEl.querySelector(":scope > .lg-chrome")).toBeNull();
       warn.mockRestore();
     });
 
@@ -735,17 +776,31 @@ describe("glass routing", () => {
       expect(surfaceEl.style.filter).toBe("");
       expect(mediaAttach).not.toHaveBeenCalled();
 
-      // `.lg-bg` is the backdrop carrier: no painted copy, no margin
-      // extension, no transform — inset 0 with the host's radius.
+      // `.lg-bg` is an oversized backdrop carrier. Its negative offset gives
+      // outward refraction real pixels to sample; its own output clip shapes
+      // the lens while the later chrome layer stays out of backdrop input.
       const bg = lensEl.querySelector<HTMLElement>(":scope > .lg-bg");
+      const chromeLayer = lensEl.querySelector<HTMLElement>(
+        ":scope > .lg-chrome",
+      );
       expect(bg).toBeTruthy();
+      expect(chromeLayer).toBeTruthy();
+      expect(bg?.nextElementSibling).toBe(chromeLayer);
+      expect(lensEl.style.overflow).toBe("visible");
+      expect(lensEl.style.background).toBe("none");
+      expect(lensEl.style.boxShadow).toBe("none");
+      expect(chromeLayer?.style.background).toBe("rgba(255, 255, 255, 0.06)");
+      expect(chromeLayer?.style.boxShadow).toBe("0 8px 30px rgba(0,0,0,0.25)");
       expect(bg?.style.backdropFilter).toContain("url(");
       expect(bg?.style.background).toBe("none");
       expect(bg?.style.backgroundPosition).toBe("");
-      expect(bg?.style.width).toBe("100%");
-      expect(bg?.style.height).toBe("100%");
+      expect(bg?.style.left).toBe("-40px");
+      expect(bg?.style.top).toBe("-40px");
+      expect(bg?.style.width).toBe("calc(100% + 80px)");
+      expect(bg?.style.height).toBe("calc(100% + 80px)");
       expect(bg?.style.transform).toBe("");
-      expect(bg?.style.borderRadius).toBe("inherit");
+      expect(bg?.style.borderRadius).toBe("0");
+      expect(bg?.style.clipPath).toBe("inset(40px round 16px)");
       expect(bg?.style.filter).toBe("");
 
       const filterId = extractFilterId(bg?.style.backdropFilter ?? "");
@@ -753,7 +808,7 @@ describe("glass routing", () => {
       const backdropMapCall = [...vi.mocked(generateDisplacementMap).mock.calls]
         .reverse()
         .find(([options]) => options.width === 120 && options.height === 50);
-      expect(backdropMapCall?.[0].amplitude).toBe(-1);
+      expect(backdropMapCall?.[0].amplitude).toBe(1);
       warn.mockRestore();
     });
 
@@ -784,6 +839,47 @@ describe("glass routing", () => {
         lenses: 0,
         devicePixelPassArea: 0,
       });
+    });
+
+    it("rasterizes and accounts a DPR-clamped backdrop at the reduced resolution", () => {
+      vi.stubGlobal("devicePixelRatio", 2);
+      const scope = createGlassScope({
+        quality: "fidelity",
+        dpr: 2,
+        scale: 0,
+        blur: 0,
+        chroma: 0,
+        specular: 0,
+        budgets: { chromium: 1_000_000 },
+      });
+      cleanups.push(() => scope.destroy());
+      const lensEl = addEl();
+      setRect(lensEl, {
+        left: 10,
+        top: 10,
+        width: 1200,
+        height: 800,
+      });
+      scope.glass(lensEl);
+
+      const clampedDpr = Math.sqrt(2_000_000 / (1200 * 800));
+      const mapCall = [...vi.mocked(generateDisplacementMap).mock.calls]
+        .reverse()
+        .find(([options]) => options.width === 1200 && options.height === 800);
+      expect(mapCall?.[0].dpr).toBeCloseTo(clampedDpr);
+      const workload = scope.getDiagnostics().backdropWorkload;
+      expect(workload).toMatchObject({
+        lenses: 1,
+        tier: "full",
+      });
+      expect(workload.devicePixelPassArea).toBeCloseTo(2_000_000);
+      const policy = scope.getDiagnostics().policy;
+      expect(policy[policy.length - 1]).toMatchObject({
+        backend: "backdrop",
+        reason: "dpr-clamped-to-area-budget",
+      });
+      expect(policy[policy.length - 1]?.dpr).toBeCloseTo(clampedDpr);
+      expect(policy[policy.length - 1]?.deviceArea).toBeCloseTo(2_000_000);
     });
 
     it("resumes an initially offscreen lens from IntersectionObserver and returns idle", () => {
@@ -950,6 +1046,9 @@ describe("glass routing", () => {
 
     it("destroy() removes the backdrop filter defs and restores the element", () => {
       const lensEl = addEl();
+      lensEl.style.overflow = "scroll";
+      lensEl.style.background = "rgb(9, 8, 7)";
+      lensEl.style.boxShadow = "1px 2px 3px blue";
       setRect(lensEl, { left: 20, top: 30, width: 120, height: 50 });
       const handle = glass(lensEl);
 
@@ -960,7 +1059,11 @@ describe("glass routing", () => {
       handle.destroy();
       expect(document.getElementById(filterId ?? "")).toBeNull();
       expect(lensEl.querySelector(".lg-bg")).toBeNull();
+      expect(lensEl.querySelector(".lg-chrome")).toBeNull();
       expect(lensEl.classList.contains("lg")).toBe(false);
+      expect(lensEl.style.overflow).toBe("scroll");
+      expect(lensEl.style.background).toBe("rgb(9, 8, 7)");
+      expect(lensEl.style.boxShadow).toBe("1px 2px 3px blue");
     });
 
     it("background:false opts out of backdrop and routes to content", () => {
@@ -999,6 +1102,68 @@ describe("glass routing", () => {
       expect(bg?.style.filter).toContain("url(");
       expect(bg?.style.backdropFilter).toBe("");
       expect(handle.backends).toEqual(["background-copy", "content-svg"]);
+    });
+
+    it("resets clipping and chrome when switching backdrop -> paint -> hidden", () => {
+      const lensEl = addEl();
+      const lensBox = setRect(lensEl, {
+        left: 10,
+        top: 10,
+        width: 100,
+        height: 50,
+      });
+      const handle = glass(lensEl, { scale: 10, blur: 0, chroma: 0 });
+      cleanups.push(() => handle.destroy());
+
+      const bg = lensEl.querySelector<HTMLElement>(":scope > .lg-bg");
+      expect(bg?.style.left).toBe("-10px");
+      expect(bg?.style.top).toBe("-10px");
+      expect(bg?.style.width).toBe("calc(100% + 20px)");
+      expect(bg?.style.clipPath).toBe("inset(10px round 16px)");
+      expect(lensEl.style.overflow).toBe("visible");
+      expect(lensEl.style.background).toBe("none");
+      expect(lensEl.style.boxShadow).toBe("none");
+      expect(lensEl.querySelector(":scope > .lg-chrome")).toBeTruthy();
+
+      handle.update({ background: "red" });
+      expect(bg?.style.left).toBe("0px");
+      expect(bg?.style.top).toBe("0px");
+      expect(bg?.style.width).toBe("120px");
+      expect(bg?.style.transform).toContain("translate(-10px, -10px)");
+      expect(bg?.style.clipPath).toBe("");
+      expect(lensEl.style.overflow).toBe("hidden");
+      expect(lensEl.style.background).toContain("0.06");
+      expect(lensEl.style.boxShadow).not.toBe("none");
+      expect(lensEl.querySelector(":scope > .lg-chrome")).toBeNull();
+
+      handle.update({ background: "auto" });
+      expect(bg?.style.left).toBe("-10px");
+      expect(bg?.style.top).toBe("-10px");
+      expect(bg?.style.width).toBe("calc(100% + 20px)");
+      expect(bg?.style.transform).toBe("");
+      expect(bg?.style.clipPath).toBe("inset(10px round 16px)");
+      expect(lensEl.style.overflow).toBe("visible");
+      expect(lensEl.querySelector(":scope > .lg-chrome")).toBeTruthy();
+
+      handle.update({ background: false });
+      expect(bg?.style.display).toBe("none");
+      expect(bg?.style.clipPath).toBe("");
+      expect(lensEl.style.overflow).toBe("hidden");
+      expect(lensEl.style.background).toContain("0.06");
+      expect(lensEl.style.boxShadow).not.toBe("none");
+      expect(lensEl.querySelector(":scope > .lg-chrome")).toBeNull();
+
+      handle.update({ background: "auto" });
+      expect(bg?.style.clipPath).toBe("inset(10px round 16px)");
+      lensBox.width = 4_000;
+      lensBox.height = 1_000;
+      handle.geometryChanged();
+      expect(handle.backends).toEqual(["native"]);
+      expect(bg?.style.clipPath).toBe("");
+      expect(lensEl.style.overflow).toBe("hidden");
+      expect(lensEl.style.background).toContain("0.06");
+      expect(lensEl.style.boxShadow).not.toBe("none");
+      expect(lensEl.querySelector(":scope > .lg-chrome")).toBeNull();
     });
 
     it("reroutes cleanly across auto -> false -> auto updates", () => {
@@ -1070,7 +1235,7 @@ describe("glass routing", () => {
       ).toHaveLength(3);
     });
 
-    it("bakes specular into a static .lg-spec overlay from the filter's own map", async () => {
+    it("composites the synchronous specular bitmap inside the backdrop filter", () => {
       const lensEl = addEl();
       const lensBox = setRect(lensEl, {
         left: 20,
@@ -1078,50 +1243,58 @@ describe("glass routing", () => {
         width: 120,
         height: 50,
       });
-      const callsBefore = vi.mocked(bakeSpecularHighlight).mock.calls.length;
+      const callsBefore = vi.mocked(generateSpecularHighlight).mock.calls
+        .length;
       const handle = glass(lensEl, { specular: 0.5 });
       cleanups.push(() => handle.destroy());
 
-      // No in-chain specular pass on this tier.
       const filter = backdropFilterOf(lensEl);
-      expect(filter?.querySelector('[result="spec"]')).toBeNull();
+      const images = filter?.querySelectorAll("feImage");
+      expect(images).toHaveLength(2);
+      expect(images?.[1]?.getAttribute("result")).toBe("spec");
+      expect(images?.[1]?.getAttribute("href")).toContain("spec-120x50-s0.5");
 
-      await settleBake();
-      const spec = lensEl.querySelector<HTMLElement>(":scope > .lg-spec");
-      expect(spec).toBeTruthy();
-      expect(spec?.getAttribute("aria-hidden")).toBe("true");
-      expect(spec?.style.backgroundImage).toContain("spec-120x50-s0.5");
-
-      // The bake read the SAME map the filter uses (highlight registration).
-      const bakeArgs = vi.mocked(bakeSpecularHighlight).mock.calls[
+      const specArgs = vi.mocked(generateSpecularHighlight).mock.calls[
         callsBefore
       ]?.[0];
-      expect(bakeArgs?.mapUrl).toBe(
-        filter?.querySelector("feImage")?.getAttribute("href"),
-      );
+      const mapArgs = [...vi.mocked(generateDisplacementMap).mock.calls]
+        .reverse()
+        .find(
+          ([options]) => options.width === 120 && options.height === 50,
+        )?.[0];
+      expect(specArgs).toMatchObject({
+        width: 120,
+        height: 50,
+        radius: 16,
+        depth: 14,
+        dpr: mapArgs?.dpr,
+        specular: 0.5,
+        specularAngle: 135,
+      });
 
-      // Size change regenerates the overlay along with the map/filter.
+      // Size change regenerates the in-chain bitmap with the map/filter.
       lensBox.width = 200;
       handle.geometryChanged();
-      await settleBake();
-      expect(spec?.style.backgroundImage).toContain("spec-200x50-s0.5");
-      expect(lensEl.querySelectorAll(":scope > .lg-spec")).toHaveLength(1);
-
-      // destroy() removes the overlay with everything else.
-      handle.destroy();
-      expect(lensEl.querySelector(".lg-spec")).toBeNull();
+      const resizedFilter = backdropFilterOf(lensEl);
+      expect(
+        resizedFilter
+          ?.querySelector('feImage[result="spec"]')
+          ?.getAttribute("href"),
+      ).toContain("spec-200x50-s0.5");
     });
 
-    it("creates no specular overlay when specular is 0", async () => {
-      const callsBefore = vi.mocked(bakeSpecularHighlight).mock.calls.length;
+    it("creates no specular image when specular is 0", () => {
+      const callsBefore = vi.mocked(generateSpecularHighlight).mock.calls
+        .length;
       const lensEl = addEl();
       setRect(lensEl, { left: 20, top: 30, width: 120, height: 50 });
       const handle = glass(lensEl); // default specular 0
       cleanups.push(() => handle.destroy());
 
-      await settleBake();
-      expect(lensEl.querySelector(".lg-spec")).toBeNull();
-      expect(vi.mocked(bakeSpecularHighlight).mock.calls.length).toBe(
+      expect(
+        backdropFilterOf(lensEl)?.querySelectorAll("feImage"),
+      ).toHaveLength(1);
+      expect(vi.mocked(generateSpecularHighlight).mock.calls.length).toBe(
         callsBefore,
       );
     });

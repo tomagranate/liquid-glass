@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { generateDisplacementMap } from "./map.js";
+import { generateDisplacementMap, generateSpecularHighlight } from "./map.js";
 
 describe("generateDisplacementMap", () => {
   it("returns null without a 2D canvas context (e.g. jsdom)", () => {
@@ -126,5 +126,97 @@ describe("generateDisplacementMap", () => {
     expect(byteAt(outward, 12, 12, 1)).toBeLessThan(128);
     expect(byteAt(inward, 12, 12, 0)).toBeGreaterThan(128);
     expect(byteAt(inward, 12, 12, 1)).toBeGreaterThan(128);
+  });
+});
+
+describe("generateSpecularHighlight", () => {
+  it("returns null without a 2D canvas context (e.g. jsdom)", () => {
+    const spy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    expect(
+      generateSpecularHighlight({
+        width: 40,
+        height: 40,
+        specular: 0.5,
+      }),
+    ).toBeNull();
+    spy.mockRestore();
+  });
+
+  function captureHighlight(
+    options: Parameters<typeof generateSpecularHighlight>[0],
+  ): { data: Uint8ClampedArray; w: number } {
+    const captured: { data: Uint8ClampedArray; w: number } = {
+      data: new Uint8ClampedArray(0),
+      w: 0,
+    };
+    const fakeCtx = {
+      createImageData(w: number, h: number) {
+        const data = new Uint8ClampedArray(w * h * 4);
+        captured.data = data;
+        captured.w = w;
+        return { data, width: w, height: h };
+      },
+      putImageData() {},
+    };
+    const ctxSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(fakeCtx as unknown as CanvasRenderingContext2D);
+    const urlSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "toDataURL")
+      .mockReturnValue("data:image/png,spec");
+    expect(generateSpecularHighlight(options)).toBe("data:image/png,spec");
+    ctxSpy.mockRestore();
+    urlSpy.mockRestore();
+    return captured;
+  }
+
+  const byteAt = (
+    m: { data: Uint8ClampedArray; w: number },
+    x: number,
+    y: number,
+    channel: number,
+  ) => m.data[(y * m.w + x) * 4 + channel];
+
+  it("renders white inside pixels with directional alpha and transparent exterior", () => {
+    const m = captureHighlight({
+      width: 40,
+      height: 40,
+      radius: 8,
+      depth: 12,
+      dpr: 1,
+      specular: 1,
+      specularAngle: 0,
+    });
+
+    expect(byteAt(m, 38, 20, 0)).toBe(255);
+    expect(byteAt(m, 38, 20, 1)).toBe(255);
+    expect(byteAt(m, 38, 20, 2)).toBe(255);
+    expect(byteAt(m, 38, 20, 3)).toBeGreaterThan(0);
+    expect(byteAt(m, 1, 20, 3)).toBe(0);
+    expect(byteAt(m, 0, 0, 3)).toBe(0);
+  });
+
+  it("applies specular strength twice like the former map-plus-bake pipeline", () => {
+    const full = captureHighlight({
+      width: 40,
+      height: 40,
+      depth: 12,
+      dpr: 1,
+      specular: 1,
+      specularAngle: 0,
+    });
+    const half = captureHighlight({
+      width: 40,
+      height: 40,
+      depth: 12,
+      dpr: 1,
+      specular: 0.5,
+      specularAngle: 0,
+    });
+    const fullAlpha = byteAt(full, 38, 20, 3);
+    const halfAlpha = byteAt(half, 38, 20, 3);
+    expect(Math.abs(halfAlpha - fullAlpha / 4)).toBeLessThanOrEqual(1);
   });
 });

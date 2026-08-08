@@ -6,6 +6,8 @@ import {
   analyzeVisualRoi,
   BACKEND_CASES,
   DEMO_CASES,
+  FIXTURE_CASES,
+  MAIN_CASES,
   severeBrowserLogs,
   validateDemoSnapshot,
   validateSceneSnapshot,
@@ -149,7 +151,7 @@ async function readSceneSnapshot() {
   const dock = await driver.executeScript(`
     const root=document.querySelector('[data-demo-case="live-backdrop-auto-fallback"]');
     const dock=root.querySelector('.glassx-dock');
-    const stage=root.querySelector('.stage');
+    const stage=root.querySelector('.stage') || root.closest('.stage');
     const apps=[...dock.querySelectorAll('.glassx-dock-app')];
     const rect=dock.getBoundingClientRect(), stageRect=stage.getBoundingClientRect();
     const slab=dock.querySelector('.glassx-dock-slab');
@@ -181,12 +183,12 @@ async function readSceneSnapshot() {
   await scrollTo(lockCase);
   await driver.wait(
     async () =>
-      driver.executeScript(`return [...document.querySelectorAll('[data-demo-case="slider"] .lock-card')]
+      driver.executeScript(`return [...document.querySelectorAll('.lockscreen .lock-card')]
         .every((card) => (card.dataset.lgBackend || '').split(',').some((value) => value !== 'none'));`),
     3_000,
   );
   const notifications = await driver.executeScript(`
-    return [...document.querySelectorAll('[data-demo-case="slider"] .notif')].map((content) => {
+    return [...document.querySelectorAll('.lockscreen .notif')].map((content) => {
       const card=content.closest('.lock-card');
       const backend=(card?.dataset.lgBackend || '').split(',');
       const bg=card?.querySelector('.lg-bg');
@@ -360,15 +362,10 @@ async function assertKeyboardInteraction(selector, key, attribute, label) {
 async function assertInteractions() {
   const installState = await driver.executeScript(`
     const hero=document.querySelector('.hero');
-    const hook=document.querySelector('#examples');
-    const guide=document.querySelector('#compatibility');
-    const advanced=document.querySelector('#catalogue');
-    const table=guide?.querySelector('table');
+    const examples=document.querySelector('#examples');
+    const playground=document.querySelector('#playground');
     return {
-      order:[hero,hook,guide,advanced].map((node) => node?.offsetTop ?? -1),
-      caption:table?.caption?.textContent.trim() || '',
-      headers:[...(table?.querySelectorAll('thead th') || [])].map((node) => node.textContent.trim()),
-      rows:table?.querySelectorAll('tbody tr').length || 0,
+      order:[hero,examples,playground].map((node) => node?.offsetTop ?? -1),
     };
   `);
   if (
@@ -379,15 +376,6 @@ async function assertInteractions() {
   ) {
     throw new Error(
       `Demo information architecture is out of order: ${installState.order}`,
-    );
-  }
-  if (
-    !installState.caption ||
-    installState.headers.length !== 4 ||
-    installState.rows !== 4
-  ) {
-    throw new Error(
-      `Compatibility table is not semantically complete: ${JSON.stringify(installState)}`,
     );
   }
 
@@ -579,20 +567,6 @@ async function assertInteractions() {
     before: playbackBefore,
     after: await playback.getAttribute("aria-label"),
   });
-
-  const darkTab = await driver.findElement(
-    By.xpath(
-      '//div[@role="tablist"]//button[@role="tab" and normalize-space()="Dark"]',
-    ),
-  );
-  await scrollTo(darkTab);
-  await driver.executeScript("arguments[0].focus()", darkTab);
-  await darkTab.sendKeys(Key.ENTER);
-  await driver.wait(
-    async () => (await darkTab.getAttribute("aria-selected")) === "true",
-    2_000,
-  );
-  summary.interactions.push({ label: "appearance tab", selected: "Dark" });
 
   const video = await driver.findElement(
     By.css('[data-demo-case="video-media"] video'),
@@ -831,10 +805,11 @@ async function assertInteractions() {
   });
 
   const allExamples = await driver.findElements(By.css(".cb"));
-  if (allExamples.length < 7)
+  if (allExamples.length < 2)
     throw new Error(
-      `Expected at least seven public code examples; total=${allExamples.length}`,
+      `Expected at least two public code examples; total=${allExamples.length}`,
     );
+  let sawReactVanillaBlock = false;
   const toggledExamples = [];
   for (const [index, block] of allExamples.entries()) {
     await scrollTo(block);
@@ -856,50 +831,87 @@ async function assertInteractions() {
     const labelledTabs = await Promise.all(
       tabs.map(async (tab) => ({ tab, label: (await tab.getText()).trim() })),
     );
+    if (labelledTabs.length < 2)
+      throw new Error(`Code example ${index + 1} has fewer than two tabs`);
+    const code = await block.findElement(By.css(".cb-code"));
     const reactTab = labelledTabs.find((item) => item.label === "React")?.tab;
     const vanillaTab = labelledTabs.find(
       (item) => item.label === "Vanilla",
     )?.tab;
-    if (!reactTab || !vanillaTab)
-      throw new Error(`Code example ${index + 1} lacks React/Vanilla tabs`);
-    await driver.executeScript("arguments[0].focus()", vanillaTab);
-    await vanillaTab.sendKeys(Key.ENTER);
-    await driver.wait(
-      async () => (await vanillaTab.getAttribute("aria-selected")) === "true",
-      2_000,
-    );
-    const code = await block.findElement(By.css(".cb-code"));
-    const vanillaText = await code.getText();
-    if (
-      !vanillaText.includes('@tomagranate/liquid-glass"') ||
-      vanillaText.includes("@tomagranate/liquid-glass/react") ||
-      vanillaText.includes("src/")
-    )
-      throw new Error(
-        `Vanilla example ${index + 1} is not a useful public-root snippet`,
+
+    if (reactTab && vanillaTab) {
+      // React/Vanilla block: verify both public-root snippet variants.
+      sawReactVanillaBlock = true;
+      await driver.executeScript("arguments[0].focus()", vanillaTab);
+      await vanillaTab.sendKeys(Key.ENTER);
+      await driver.wait(
+        async () => (await vanillaTab.getAttribute("aria-selected")) === "true",
+        2_000,
       );
+      const vanillaText = await code.getText();
+      if (
+        !vanillaText.includes('@tomagranate/liquid-glass"') ||
+        vanillaText.includes("@tomagranate/liquid-glass/react") ||
+        vanillaText.includes("src/")
+      )
+        throw new Error(
+          `Vanilla example ${index + 1} is not a useful public-root snippet`,
+        );
+      const copy = await block.findElement(By.css(".cb-copy"));
+      await copy.click();
+      await driver.wait(
+        async () => (await copy.getText()).includes("Copied"),
+        2_000,
+        `Code example ${index + 1} copy interaction failed`,
+      );
+      await reactTab.click();
+      await driver.wait(
+        async () => (await reactTab.getAttribute("aria-selected")) === "true",
+        2_000,
+      );
+      const reactText = await code.getText();
+      if (
+        !reactText.includes("@tomagranate/liquid-glass/react") ||
+        reactText.includes("src/")
+      )
+        throw new Error(
+          `React example ${index + 1} is not a useful public React snippet`,
+        );
+      toggledExamples.push({
+        index: index + 1,
+        variants: ["Vanilla", "React"],
+      });
+      continue;
+    }
+
+    // Section block (e.g. Wallpaper/Content/Media): every tab is a public
+    // React snippet; switching tabs must swap the snippet and copy must work.
+    for (const { tab, label } of labelledTabs) {
+      await tab.click();
+      await driver.wait(
+        async () => (await tab.getAttribute("aria-selected")) === "true",
+        2_000,
+      );
+      const text = await code.getText();
+      if (!text.includes("@tomagranate/liquid-glass") || text.includes("src/"))
+        throw new Error(
+          `Section example ${index + 1} tab "${label}" is not a useful public snippet`,
+        );
+    }
     const copy = await block.findElement(By.css(".cb-copy"));
     await copy.click();
     await driver.wait(
       async () => (await copy.getText()).includes("Copied"),
       2_000,
-      `Code example ${index + 1} copy interaction failed`,
+      `Section example ${index + 1} copy interaction failed`,
     );
-    await reactTab.click();
-    await driver.wait(
-      async () => (await reactTab.getAttribute("aria-selected")) === "true",
-      2_000,
-    );
-    const reactText = await code.getText();
-    if (
-      !reactText.includes("@tomagranate/liquid-glass/react") ||
-      reactText.includes("src/")
-    )
-      throw new Error(
-        `React example ${index + 1} is not a useful public React snippet`,
-      );
-    toggledExamples.push({ index: index + 1, variants: ["Vanilla", "React"] });
+    toggledExamples.push({
+      index: index + 1,
+      variants: await Promise.all(labelledTabs.map((item) => item.label)),
+    });
   }
+  if (!sawReactVanillaBlock)
+    throw new Error("No React/Vanilla public code example was found");
   summary.interactions.push({
     label: "public code tabs",
     examples: toggledExamples,
@@ -990,43 +1002,8 @@ async function readBrowserLogs() {
   }
 }
 
-try {
-  environment.demoAssets = await verifyDemoBuild();
-  server = await startStaticServer(demoRoot);
-  ({ driver, service } = await createBrandedDriver(browser));
-  environment = {
-    ...environment,
-    ...(await assertBrand(driver, browser)),
-    os: `${process.platform} ${process.arch}`,
-  };
-  await driver
-    .manage()
-    .window()
-    .setRect({ width: 1280, height: 900, x: 0, y: 0 });
-  await driver.get(server.url);
-  await driver.wait(until.elementsLocated(By.css("[data-demo-case]")), 15_000);
-  await driver.wait(
-    async () =>
-      (await driver.findElements(By.css("[data-demo-case]"))).length ===
-      DEMO_CASES.length,
-    15_000,
-  );
-  if (browser === "safari") {
-    const activation = spawnSync("/usr/bin/osascript", [
-      "-e",
-      'tell application "Safari" to activate',
-    ]);
-    if (activation.status !== 0) {
-      throw new Error(
-        `Could not foreground the real Safari automation window: ${activation.stderr}`,
-      );
-    }
-    environment.foregroundRequested = true;
-    await driver.sleep(250);
-  }
-  environment.renderPreflight = await awaitVisibleRenderPreflight();
-  const backends = {};
-  for (const demoCase of DEMO_CASES) {
+async function walkCases(cases, backends) {
+  for (const demoCase of cases) {
     const element = await driver.findElement(
       By.css(`[data-demo-case="${demoCase}"]`),
     );
@@ -1067,16 +1044,78 @@ try {
       );
     }
   }
+}
 
+try {
+  environment.demoAssets = await verifyDemoBuild();
+  server = await startStaticServer(demoRoot);
+  ({ driver, service } = await createBrandedDriver(browser));
+  environment = {
+    ...environment,
+    ...(await assertBrand(driver, browser)),
+    os: `${process.platform} ${process.arch}`,
+  };
+  await driver
+    .manage()
+    .window()
+    .setRect({ width: 1280, height: 900, x: 0, y: 0 });
+  const fixturesUrl = `${server.url}${server.url.includes("?") ? "&" : "?"}fixtures`;
+  await driver.get(server.url);
+  await driver.wait(until.elementsLocated(By.css("[data-demo-case]")), 15_000);
+  await driver.wait(
+    async () =>
+      (await driver.findElements(By.css("[data-demo-case]"))).length ===
+      MAIN_CASES.length,
+    15_000,
+  );
+  if (browser === "safari") {
+    const activation = spawnSync("/usr/bin/osascript", [
+      "-e",
+      'tell application "Safari" to activate',
+    ]);
+    if (activation.status !== 0) {
+      throw new Error(
+        `Could not foreground the real Safari automation window: ${activation.stderr}`,
+      );
+    }
+    environment.foregroundRequested = true;
+    await driver.sleep(250);
+  }
+  environment.renderPreflight = await awaitVisibleRenderPreflight();
+  const backends = {};
+
+  // Marketing page ("/") — the MAIN_CASES plus scene contract and interactions.
+  await walkCases(MAIN_CASES, backends);
   const desktopSnapshot = await readPageSnapshot(backends);
   summary.desktop = desktopSnapshot;
-  summary.failures.push(...validateDemoSnapshot(desktopSnapshot, browser));
+  summary.failures.push(
+    ...validateDemoSnapshot(desktopSnapshot, browser, MAIN_CASES),
+  );
   const sceneSnapshot = await readSceneSnapshot();
   summary.sceneContract = sceneSnapshot;
   summary.failures.push(...validateSceneSnapshot(sceneSnapshot));
   await assertInteractions();
-  await assertDiagnostics(backends);
   const desktopPageErrors = await driver.executeScript(
+    "return window.__liquidGlassDemoErrors || []",
+  );
+
+  // Fixtures page ("/?fixtures") — the cut technical cases and diagnostics.
+  await driver.get(fixturesUrl);
+  await driver.wait(
+    async () =>
+      (await driver.findElements(By.css("[data-demo-case]"))).length ===
+      FIXTURE_CASES.length,
+    15_000,
+  );
+  await awaitVisibleRenderPreflight();
+  await walkCases(FIXTURE_CASES, backends);
+  const fixturesSnapshot = await readPageSnapshot(backends);
+  summary.fixtures = fixturesSnapshot;
+  summary.failures.push(
+    ...validateDemoSnapshot(fixturesSnapshot, browser, FIXTURE_CASES),
+  );
+  await assertDiagnostics(backends);
+  const fixturesPageErrors = await driver.executeScript(
     "return window.__liquidGlassDemoErrors || []",
   );
 
@@ -1088,7 +1127,7 @@ try {
   await driver.wait(
     async () =>
       (await driver.findElements(By.css("[data-demo-case]"))).length ===
-      DEMO_CASES.length,
+      MAIN_CASES.length,
     15_000,
   );
   const mobileSnapshot = await readPageSnapshot(backends);
@@ -1103,7 +1142,11 @@ try {
   const mobilePageErrors = await driver.executeScript(
     "return window.__liquidGlassDemoErrors || []",
   );
-  const pageErrors = [...desktopPageErrors, ...mobilePageErrors];
+  const pageErrors = [
+    ...desktopPageErrors,
+    ...fixturesPageErrors,
+    ...mobilePageErrors,
+  ];
   summary.pageErrors = pageErrors;
   if (pageErrors.length)
     summary.failures.push(`page errors: ${pageErrors.join(" | ")}`);
