@@ -98,7 +98,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.7.0",
-    "@vitest/browser": "^3.2.6",
+    "@vitest/browser": "^3.2.7",
     "jsdom": "^25.0.1",
     "playwright": "^1.61.1",
     "pngjs": "^7.0.0",
@@ -108,6 +108,6 @@
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vite": "^6.4.3",
-    "vitest": "^3.2.6"
+    "vitest": "^3.2.7"
   }
 }
