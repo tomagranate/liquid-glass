@@ -331,6 +331,9 @@ describe("browser: offscreen lens lifecycle", () => {
     });
 
     scroller.scrollTop = 0;
+    // WebKit automation can coalesce consecutive programmatic scroll events.
+    // Dispatch the captured event so this test exercises the runtime path.
+    scroller.dispatchEvent(new Event("scroll"));
     await vi.waitFor(() => {
       expect(lens.dataset.lgBackend).toBe("none");
     });
