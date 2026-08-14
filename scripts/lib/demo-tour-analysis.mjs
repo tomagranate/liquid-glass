@@ -39,9 +39,17 @@ const KNOWN_BACKENDS = new Set([
   "none",
 ]);
 
-export function expectedBackendFamily(browser, demoCase) {
+export function expectedBackendFamily(
+  browser,
+  demoCase,
+  { mediaWebglAvailable = true } = {},
+) {
   if (!BACKEND_CASES.includes(demoCase)) return [];
-  if (demoCase === "canvas-media") return ["media-webgl"];
+  if (demoCase === "canvas-media") {
+    return mediaWebglAvailable
+      ? ["media-webgl"]
+      : ["backdrop", "background-copy", "native", "none"];
+  }
   if (demoCase === "video-media") return ["none"];
   if (
     [
@@ -62,6 +70,7 @@ export function validateDemoSnapshot(
   snapshot,
   browser,
   expectedCases = DEMO_CASES,
+  capabilities,
 ) {
   const failures = [];
   const found = new Set(snapshot.cases || []);
@@ -95,7 +104,7 @@ export function validateDemoSnapshot(
   for (const demoCase of expectedCases) {
     if (!BACKEND_CASES.includes(demoCase)) continue;
     const actual = snapshot.backends?.[demoCase] || [];
-    const expected = expectedBackendFamily(browser, demoCase);
+    const expected = expectedBackendFamily(browser, demoCase, capabilities);
     if (actual.some((backend) => !KNOWN_BACKENDS.has(backend))) {
       failures.push(`${demoCase}: unknown backend ${actual.join(",")}`);
     } else if (!actual.some((backend) => expected.includes(backend))) {

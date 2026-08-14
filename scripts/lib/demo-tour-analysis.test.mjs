@@ -93,6 +93,22 @@ test("rejects absent, substituted, and unknown browser backends", () => {
   );
 });
 
+test("accepts the documented media fallback without WebGL2", () => {
+  const snapshot = validSnapshot("firefox");
+  snapshot.backends["canvas-media"] = ["none", "background-copy"];
+  assert.deepEqual(
+    validateDemoSnapshot(snapshot, "firefox", DEMO_CASES, {
+      mediaWebglAvailable: false,
+    }),
+    [],
+  );
+  assert.ok(
+    validateDemoSnapshot(snapshot, "firefox").some((failure) =>
+      failure.includes("canvas-media"),
+    ),
+  );
+});
+
 test("normalizes only error-level browser log entries", () => {
   assert.deepEqual(
     severeBrowserLogs([

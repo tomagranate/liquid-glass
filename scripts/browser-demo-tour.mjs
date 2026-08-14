@@ -687,6 +687,10 @@ async function assertInteractions() {
   );
   const playingMediaState = await readPlayingMediaState();
   const playingControlBackends = playingMediaState.backends;
+  environment.mediaWebglAvailable =
+    playingMediaState.overlayPresent &&
+    playingMediaState.webgl2Available &&
+    !playingMediaState.contextLost;
   await video.click();
   await driver.wait(
     async () =>
@@ -1128,7 +1132,9 @@ try {
   const fixturesSnapshot = await readPageSnapshot(backends);
   summary.fixtures = fixturesSnapshot;
   summary.failures.push(
-    ...validateDemoSnapshot(fixturesSnapshot, browser, FIXTURE_CASES),
+    ...validateDemoSnapshot(fixturesSnapshot, browser, FIXTURE_CASES, {
+      mediaWebglAvailable: environment.mediaWebglAvailable,
+    }),
   );
   await assertDiagnostics(backends);
   const fixturesPageErrors = await driver.executeScript(
