@@ -26,6 +26,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Install browser dependencies
+        run: npx playwright install --with-deps chromium firefox webkit
+
       - name: Test
         run: npm test
 
