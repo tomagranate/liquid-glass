@@ -331,8 +331,14 @@ describe("browser: offscreen lens lifecycle", () => {
     });
 
     scroller.scrollTop = 0;
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    expect(lens.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      scroller.getBoundingClientRect().bottom,
+    );
     // WebKit automation can coalesce consecutive programmatic scroll events.
-    // Dispatch the captured event so this test exercises the runtime path.
+    // Flush layout, then dispatch the event that exercises the runtime path.
     scroller.dispatchEvent(new Event("scroll"));
     await vi.waitFor(() => {
       expect(lens.dataset.lgBackend).toBe("none");
