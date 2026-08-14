@@ -658,8 +658,18 @@ export function glass(
     // Observer-less environments retain correctness at the cost of checking
     // only their inactive lenses on a coalesced scroll frame.
     if (inactive && !unsubscribeViewport) return true;
-    if (!active.size) return false;
     const scroller = scrollElementOf(target);
+    // Linux WebKit can miss the exit transition after a filtered copy becomes
+    // active inside a clipped scroller. Check those copies once per scroll
+    // frame so they still suspend when the ancestor clips them.
+    if (
+      detectEngine() === "webkit" &&
+      currentBackends.includes("background-copy") &&
+      (!scroller || scroller.contains(element))
+    ) {
+      return true;
+    }
+    if (!active.size) return false;
     if (!scroller) return true;
 
     const lensFixed = isFixedLike(element);
