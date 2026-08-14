@@ -136,6 +136,13 @@ const BACKEND_ORDER: readonly GlassBackend[] = [
   "native",
   "none",
 ];
+const CLIPPING_OVERFLOW = new Set([
+  "auto",
+  "clip",
+  "hidden",
+  "overlay",
+  "scroll",
+]);
 
 function option<K extends keyof GlassMaterialOptions>(
   opts: GlassOptions,
@@ -333,6 +340,7 @@ export function glass(
   let backendSignature = "";
   let inactive = true;
   let viewportIntersecting: boolean | null = null;
+  let syncWebkitCopyOnScroll = false;
 
   function publishBackends(found: Set<GlassBackend>): void {
     if (!found.size) found.add("none");
@@ -384,6 +392,28 @@ export function glass(
   function unobserveSurface(el: Element): void {
     if (!observedSurfaces.delete(el)) return;
     ro?.unobserve(el);
+  }
+
+  function clippedByOverflowAncestor(rect: DOMRect): boolean {
+    for (
+      let parent = element.parentElement;
+      parent;
+      parent = parent.parentElement
+    ) {
+      const style = getComputedStyle(parent);
+      const parentRect = getGeometryRect(parent);
+      const clipsX = CLIPPING_OVERFLOW.has(style.overflowX);
+      const clipsY = CLIPPING_OVERFLOW.has(style.overflowY);
+      if (
+        (clipsX &&
+          (rect.right <= parentRect.left || rect.left >= parentRect.right)) ||
+        (clipsY &&
+          (rect.bottom <= parentRect.top || rect.top >= parentRect.bottom))
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   const materialSig = (): string =>
@@ -528,7 +558,10 @@ export function glass(
       lensRect.bottom <= 0 ||
       lensRect.left >= window.innerWidth ||
       lensRect.top >= window.innerHeight;
-    inactive = tooSmall || offscreen || viewportIntersecting === false;
+    const clipped =
+      syncWebkitCopyOnScroll && clippedByOverflowAncestor(lensRect);
+    inactive =
+      tooSmall || offscreen || clipped || viewportIntersecting === false;
     if (runtime && !inactive && backdropEligible()) {
       const desired = resolveMaterial(
         opts,
@@ -638,6 +671,14 @@ export function glass(
     if (backgroundBackend) backends.add(backgroundBackend);
     publishBackends(backends);
 
+    if (detectEngine() === "webkit") {
+      if (backgroundBackend === "background-copy") {
+        syncWebkitCopyOnScroll = true;
+      } else if (!inactive) {
+        syncWebkitCopyOnScroll = false;
+      }
+    }
+
     // The painted-copy subsystem already observes its copy with a generous
     // root margin so it can stop scroll painting offscreen. Reuse that signal
     // instead of tracking every moving copy twice. WebKit can keep a filtered
@@ -662,11 +703,7 @@ export function glass(
     // Linux WebKit can miss the exit transition after a filtered copy becomes
     // active inside a clipped scroller. Check those copies once per scroll
     // frame so they still suspend when the ancestor clips them.
-    if (
-      detectEngine() === "webkit" &&
-      currentBackends.includes("background-copy") &&
-      (!scroller || scroller.contains(element))
-    ) {
+    if (syncWebkitCopyOnScroll && (!scroller || scroller.contains(element))) {
       return true;
     }
     if (!active.size) return false;
