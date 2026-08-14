@@ -4,6 +4,7 @@ import {
   scenarioMotionMode,
   shouldNotifyManualGeometry,
 } from "./motion-policy.js";
+import { expectedBackend } from "./backend-policy.js";
 import "./style.css";
 
 const app = document.querySelector("#app");
@@ -39,26 +40,6 @@ function countFrom(id) {
   if (id === "content-small-motion") return 3;
   if (id === "mixed") return 8;
   return Number(id.match(/-(1|8|32)$/)?.[1] ?? (id === "media-live-8" ? 8 : 1));
-}
-
-function expectedBackend(id) {
-  const ua = navigator.userAgent;
-  if (id === "idle-teardown") return ["backdrop", "background-copy", "none"];
-  if (id.startsWith("background-copy")) {
-    if (countFrom(id) > 8) return ["native"];
-    const denseWebKit =
-      /AppleWebKit\//.test(ua) &&
-      !/(?:Chrome|Chromium|Edg)\//.test(ua) &&
-      countFrom(id) > 1;
-    return denseWebKit ? ["native"] : ["background-copy"];
-  }
-  if (id.startsWith("media-live")) return ["media-webgl"];
-  if (id.startsWith("content-page")) return ["content-svg", "native"];
-  if (id.startsWith("content-") || id === "mixed")
-    return ["content-svg", "media-webgl", "background-copy", "native"];
-  if (id.startsWith("backdrop") && /(?:Chrome|Chromium)\//.test(ua))
-    return ["backdrop"];
-  return ["content-svg", "background-copy", "native"];
 }
 
 function markup(id, count) {
@@ -263,7 +244,10 @@ function snapshot() {
     scenario: current?.scenario,
     effect: current?.effect,
     backends: [...new Set(backends)],
-    expectedBackends: expectedBackend(current?.scenario || ""),
+    expectedBackends: expectedBackend(
+      current?.scenario || "",
+      navigator.userAgent,
+    ),
     motion: current?.motion ?? 0,
     scrollDistance: current?.scrollDistance ?? 0,
     manualGeometryChanged: current?.manualGeometryChanged ?? 0,
