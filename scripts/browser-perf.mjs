@@ -6,9 +6,9 @@ import { startStaticServer } from "./lib/static-server.mjs";
 import { createBrandedDriver, assertBrand } from "./lib/webdriver.mjs";
 import { compareRoi, renderRoiDiff } from "./lib/png-proof.mjs";
 import {
+  evaluateInteractions,
   evaluatePair,
   medianRun,
-  percentile,
   summarize,
 } from "./lib/perf-analysis.mjs";
 import { scenarioMotionMode } from "../tests/perf/motion-policy.js";
@@ -235,14 +235,10 @@ try {
     const interactions = await driver.executeScript(
       "return window.__liquidGlassPerf.interactionResults",
     );
-    if (
-      !interactions.length ||
-      percentile(interactions, 0.95) > scenarioThresholds.interactionP95 ||
-      Math.max(...interactions) > scenarioThresholds.interactionWorst
-    )
-      throw new Error(
-        `${scenario}: interaction threshold failed ${JSON.stringify(interactions)}`,
-      );
+    const interactionEvaluation = evaluateInteractions(
+      interactions,
+      scenarioThresholds,
+    );
 
     const effectRuns = [];
     const controlRuns = [];
@@ -334,6 +330,7 @@ try {
       evaluation.failures.push(
         `mount second paint ${effectProofRun.mountSecondPaint.toFixed(2)}ms`,
       );
+    evaluation.failures.push(...interactionEvaluation.failures);
     evaluation.pass = evaluation.failures.length === 0;
     const result = {
       scenario,
@@ -344,8 +341,8 @@ try {
       backends: actual,
       diagnostics: effectProofRun.diagnostics,
       interactions,
-      interactionP95: percentile(interactions, 0.95),
-      interactionWorst: Math.max(...interactions),
+      interactionP95: interactionEvaluation.p95,
+      interactionWorst: interactionEvaluation.worst,
     };
     summary.scenarios.push(result);
     if (!evaluation.pass)

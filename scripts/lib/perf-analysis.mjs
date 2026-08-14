@@ -47,3 +47,17 @@ export function evaluatePair(effect, control, thresholds) {
     failures.push(`paired drop ratio ${effect.dropRatio.toFixed(3)}`);
   return { pass: failures.length === 0, ratio, failures };
 }
+
+export function evaluateInteractions(values, thresholds) {
+  const p95 = percentile(values, 0.95);
+  const worst = Math.max(0, ...values);
+  const failures = [];
+  if (
+    !values.length ||
+    p95 > thresholds.interactionP95 ||
+    worst > thresholds.interactionWorst
+  ) {
+    failures.push(`interaction threshold ${JSON.stringify(values)}`);
+  }
+  return { pass: failures.length === 0, p95, worst, failures };
+}

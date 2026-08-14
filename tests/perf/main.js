@@ -247,6 +247,7 @@ function snapshot() {
     expectedBackends: expectedBackend(
       current?.scenario || "",
       navigator.userAgent,
+      { mediaWebglAvailable: Boolean(document.querySelector(".lgm-overlay")) },
     ),
     motion: current?.motion ?? 0,
     scrollDistance: current?.scrollDistance ?? 0,

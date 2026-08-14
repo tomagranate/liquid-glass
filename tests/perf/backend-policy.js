@@ -4,7 +4,11 @@ function countFrom(id) {
   return Number(id.match(/-(1|8|32)$/)?.[1] ?? (id === "media-live-8" ? 8 : 1));
 }
 
-export function expectedBackend(id, userAgent) {
+export function expectedBackend(
+  id,
+  userAgent,
+  { mediaWebglAvailable = true } = {},
+) {
   if (id === "idle-teardown") return ["backdrop", "background-copy", "none"];
   if (id.startsWith("background-copy")) {
     const denseWebKit =
@@ -13,7 +17,8 @@ export function expectedBackend(id, userAgent) {
       countFrom(id) > 1;
     return denseWebKit ? ["native"] : ["background-copy"];
   }
-  if (id.startsWith("media-live")) return ["media-webgl"];
+  if (id.startsWith("media-live"))
+    return mediaWebglAvailable ? ["media-webgl"] : ["none"];
   if (id.startsWith("content-page")) return ["content-svg", "native"];
   if (id.startsWith("content-") || id === "mixed")
     return ["content-svg", "media-webgl", "background-copy", "native"];

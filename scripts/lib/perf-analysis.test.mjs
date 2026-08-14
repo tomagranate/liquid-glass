@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluatePair, summarize } from "./perf-analysis.mjs";
+import {
+  evaluateInteractions,
+  evaluatePair,
+  summarize,
+} from "./perf-analysis.mjs";
 
 const thresholds = {
   minFrames: 80,
@@ -21,4 +25,13 @@ test("paired and absolute logic avoids a slow-host-only false positive", () => {
   const control = summarize(Array(90).fill(40), 16.7);
   const effect = summarize(Array(90).fill(42), 16.7);
   assert.equal(evaluatePair(effect, control, thresholds).pass, true);
+});
+
+test("interaction failures remain reportable without aborting later scenarios", () => {
+  const result = evaluateInteractions([333, 216, 14, 29, 20], {
+    interactionP95: 100,
+    interactionWorst: 200,
+  });
+  assert.equal(result.pass, false);
+  assert.match(result.failures.join(" "), /interaction threshold/);
 });

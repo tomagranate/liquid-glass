@@ -28,3 +28,12 @@ test("limits dense background copies to Safari's native fallback", () => {
     "native",
   ]);
 });
+
+test("accepts the documented media fallback without WebGL2", () => {
+  assert.deepEqual(
+    expectedBackend("media-live-1", firefox, {
+      mediaWebglAvailable: false,
+    }),
+    ["none"],
+  );
+});
