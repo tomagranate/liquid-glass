@@ -640,9 +640,13 @@ export function glass(
 
     // The painted-copy subsystem already observes its copy with a generous
     // root margin so it can stop scroll painting offscreen. Reuse that signal
-    // instead of making Chromium track every moving copy twice. Other tiers
-    // retain the shared lens observer for suspension.
-    if (backgroundBackend === "background-copy") {
+    // instead of tracking every moving copy twice. WebKit can keep a filtered
+    // child intersecting after an ancestor scroll clips its lens, so retain
+    // the shared lens observer there. Other tiers also retain it.
+    if (
+      backgroundBackend === "background-copy" &&
+      detectEngine() !== "webkit"
+    ) {
       unsubscribeViewport?.();
       unsubscribeViewport = null;
     } else if (!unsubscribeViewport) {
