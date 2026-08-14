@@ -312,11 +312,11 @@ describe("browser: offscreen lens lifecycle", () => {
     scroller.style.cssText =
       "position:fixed;inset:0;width:320px;height:200px;overflow:auto;background:linear-gradient(135deg,#123,#789);";
     const track = document.createElement("div");
-    track.style.cssText = "position:relative;height:1000px;";
+    track.style.cssText = "position:relative;height:2600px;";
     const lens = document.createElement("button");
     lens.textContent = "Below fold";
     lens.style.cssText =
-      "position:absolute;left:20px;top:800px;width:140px;height:56px;";
+      "position:absolute;left:20px;top:2000px;width:140px;height:56px;";
     track.appendChild(lens);
     scroller.appendChild(track);
     document.body.appendChild(scroller);
@@ -325,7 +325,7 @@ describe("browser: offscreen lens lifecycle", () => {
     await vi.waitFor(() => {
       expect(lens.dataset.lgBackend).toBe("none");
     });
-    scroller.scrollTop = 740;
+    scroller.scrollTop = 1940;
     await vi.waitFor(() => {
       expect(lens.dataset.lgBackend).not.toBe("none");
     });
