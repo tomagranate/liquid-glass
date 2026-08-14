@@ -654,24 +654,39 @@ async function assertInteractions() {
     4_000,
     "video did not enter playing state",
   );
-  const readPlayingControlBackends = () =>
+  const readPlayingMediaState = () =>
     driver.executeScript(`
-      return [...document.querySelectorAll(
-        '[data-demo-case="video-media"] .glassx-video-scrub, [data-demo-case="video-media"] .glassx-video-ctl'
-      )].map((control) => control.dataset.lgBackend || 'missing');
+      const root = document.querySelector('[data-demo-case="video-media"]');
+      const overlay = root?.querySelector('.lgm-overlay');
+      const context = overlay?.getContext('webgl2') || null;
+      return {
+        backends: [...(root?.querySelectorAll(
+          '.glassx-video-scrub, .glassx-video-ctl'
+        ) || [])].map((control) => control.dataset.lgBackend || 'missing'),
+        overlayPresent: Boolean(overlay),
+        webgl2Available: Boolean(context),
+        contextLost: context?.isContextLost() ?? false,
+      };
     `);
   await driver.wait(
     async () => {
-      const backends = await readPlayingControlBackends();
+      const state = await readPlayingMediaState();
+      const mediaAvailable =
+        state.overlayPresent && state.webgl2Available && !state.contextLost;
       return (
-        backends.length > 0 &&
-        backends.every((value) => value.split(",").includes("media-webgl"))
+        state.backends.length > 0 &&
+        state.backends.every((value) =>
+          mediaAvailable
+            ? value.split(",").includes("media-webgl")
+            : value === "none",
+        )
       );
     },
     4_000,
-    "playing video controls did not switch to media-webgl",
+    "playing video controls did not match the media WebGL capability",
   );
-  const playingControlBackends = await readPlayingControlBackends();
+  const playingMediaState = await readPlayingMediaState();
+  const playingControlBackends = playingMediaState.backends;
   await video.click();
   await driver.wait(
     async () =>
@@ -721,6 +736,7 @@ async function assertInteractions() {
     );
   summary.interactions.push({
     label: "video play states",
+    media: playingMediaState,
     initial: initialVideo,
     transitions: ["paused", "playing", "paused"],
     playingControlBackends,

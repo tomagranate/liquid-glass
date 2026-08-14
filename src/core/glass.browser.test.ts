@@ -316,7 +316,7 @@ describe("browser: offscreen lens lifecycle", () => {
     const lens = document.createElement("button");
     lens.textContent = "Below fold";
     lens.style.cssText =
-      "position:absolute;left:20px;top:600px;width:140px;height:56px;";
+      "position:absolute;left:20px;top:800px;width:140px;height:56px;";
     track.appendChild(lens);
     scroller.appendChild(track);
     document.body.appendChild(scroller);
@@ -325,7 +325,7 @@ describe("browser: offscreen lens lifecycle", () => {
     await vi.waitFor(() => {
       expect(lens.dataset.lgBackend).toBe("none");
     });
-    scroller.scrollTop = 540;
+    scroller.scrollTop = 740;
     await vi.waitFor(() => {
       expect(lens.dataset.lgBackend).not.toBe("none");
     });
