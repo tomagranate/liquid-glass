@@ -1,7 +1,7 @@
 /* Glass demo components built on the v0.1 surfaces × lenses API.
 
    Every component is a `<Glass>` lens (class `.lg`, added by the core) or a
-   `createSurface`d track (`.lgs-surface`). The core owns the refraction
+   marked track (`.lgs-surface`). The core owns the refraction
    (`.lg-bg`), sheen (`.lg-sheen`), tint, rim light and shadow via inline styles;
    the rules below only add component *layout* and the crisp content that rides
    on top of the glass. */
@@ -386,7 +386,7 @@
   display: none;
 }
 
-/* ── Video player (GlassMediaSurface + glass controls over live video) ────── */
+/* ── Video player (GlassMedia + glass controls over live video) ───────────── */
 .glassx-video {
   position: relative;
   max-width: 100%;
@@ -406,7 +406,7 @@
   display: block;
   cursor: pointer;
 }
-/* Controls are `<Glass>` lenses positioned over the video; the media surface's
+/* Controls are media-glass lenses positioned over the video; the media source's
    WebGL pass refracts the frame beneath each one. */
 .glassx-video-ctl {
   position: absolute;

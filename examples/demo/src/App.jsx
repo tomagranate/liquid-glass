@@ -16,11 +16,15 @@ import {
 import { ChatBubbleOvalLeftEllipsisIcon } from "@heroicons/react/24/solid";
 import {
   Glass,
-  GlassMediaSurface,
+  GlassMedia,
+  GlassOverMedia,
+  GlassOverPage,
+  GlassOverRegion,
+  GlassOverWallpaper,
+  GlassRegion,
   GlassRoot,
-  GlassSurface,
-  useGlass,
   useGlassDiagnostics,
+  useGlassOverRegion,
 } from "@tomagranate/liquid-glass/react";
 import { createGlassScope, setBackground } from "@tomagranate/liquid-glass";
 import { CodeBlock } from "./CodeBlock.jsx";
@@ -103,41 +107,46 @@ const CASES = {
 
 /* ── Section snippets (≤6 lines, one API introduced each) ──────────────────── */
 
-// One full-width code block sits below the three-pane grid; each tab is the
-// React snippet for one backend (≤8 lines), shown at the section's full width.
+// One full-width code block sits below the four-pane grid.
 const EXAMPLES_CODE = [
   {
-    label: "Wallpaper",
+    label: "Page",
     lang: "jsx",
-    code: `import { Glass } from "@tomagranate/liquid-glass/react";
+    code: `import { GlassOverPage } from "@tomagranate/liquid-glass/react";
 
-// Zero config. On Chromium the compositor bends the live page — wallpaper
-// and any page content behind the glass. Safari/Firefox bend a wallpaper copy.
-<Glass as="nav" radius={999}>
+// Chromium refracts the live page. Safari and Firefox use polished frost.
+<GlassOverPage as="nav" radius={999}>
   {links}
-</Glass>`,
+</GlassOverPage>`,
   },
   {
-    label: "Content",
+    label: "Region",
     lang: "jsx",
-    code: `import { Glass, GlassSurface } from "@tomagranate/liquid-glass/react";
+    code: `import { GlassOverRegion, GlassRegion } from "@tomagranate/liquid-glass/react";
 
-// Register a bounded island; an SVG filter bends its own live DOM in every
-// browser, and the content behind the lens stays selectable and clickable.
-<GlassSurface background>{liveContent}</GlassSurface>
-<Glass background={false} radius="50%" />`,
+// Mark a bounded live DOM region. Keep the lens outside the marked subtree.
+<GlassRegion>{liveContent}</GlassRegion>
+<GlassOverRegion radius="50%" />`,
   },
   {
     label: "Media",
     lang: "jsx",
-    code: `import { Glass, GlassMediaSurface } from "@tomagranate/liquid-glass/react";
+    code: `import { GlassMedia, GlassOverMedia } from "@tomagranate/liquid-glass/react";
 
-// Browser filters can't read video or canvas pixels, so the surface textures
-// the media through WebGL. Canvas works identically.
-<GlassMediaSurface live>
+<GlassMedia live>
   <video src="/coast.mp4" muted loop playsInline />
-  <Glass as="button" radius="50%" background={false}>{playIcon}</Glass>
-</GlassMediaSurface>`,
+  <GlassOverMedia as="button" radius="50%">{playIcon}</GlassOverMedia>
+</GlassMedia>`,
+  },
+  {
+    label: "Wallpaper",
+    lang: "jsx",
+    code: `import { GlassOverWallpaper } from "@tomagranate/liquid-glass/react";
+
+// Use this only when the CSS artwork is known and safe to paint again.
+<GlassOverWallpaper wallpaper="url(/art.webp)" radius={999}>
+  Brand artwork
+</GlassOverWallpaper>`,
   },
 ];
 
@@ -145,13 +154,13 @@ const CONTROLS_CODE = [
   {
     label: "React",
     lang: "jsx",
-    code: `import { useGlass, useSurface } from "@tomagranate/liquid-glass/react";
+    code: `import { useGlassOverRegion, useGlassRegion } from "@tomagranate/liquid-glass/react";
 
 function Slider({ value }) {
   const track = useRef(null);
   const thumb = useRef(null);
-  useSurface(track);                          // the filled bar bends in place
-  useGlass(thumb, { radius: 999, background: false });
+  useGlassRegion(track);
+  useGlassOverRegion(thumb, { radius: 999 });
   return (
     <div className="slider">
       <div ref={track} className="track">
@@ -165,12 +174,12 @@ function Slider({ value }) {
   {
     label: "Vanilla",
     lang: "js",
-    code: `import { createSurface, glass } from "@tomagranate/liquid-glass";
+    code: `import { createGlassRegion, glassOverRegion } from "@tomagranate/liquid-glass";
 
 const track = document.querySelector(".slider-track");
 const thumb = document.querySelector(".slider-thumb");
-createSurface(track);
-const handle = glass(thumb, { radius: 999, background: false });
+createGlassRegion(track);
+const handle = glassOverRegion(thumb, { radius: 999 });
 
 input.addEventListener("input", () => {
   thumb.style.left = input.value + "%";
@@ -183,21 +192,20 @@ const CANVAS_CODE = [
   {
     label: "React",
     lang: "jsx",
-    code: `import { Glass, GlassMediaSurface } from "@tomagranate/liquid-glass/react";
+    code: `import { GlassMedia, GlassOverMedia } from "@tomagranate/liquid-glass/react";
 
-// Charts, maps, games, and editors can opt into the live texture backend.
-<GlassMediaSurface live>
+<GlassMedia live>
   <canvas ref={chartRef} />
-  <Glass as="button" background={false} radius={999}>Inspect live data</Glass>
-</GlassMediaSurface>`,
+  <GlassOverMedia as="button" radius={999}>Inspect live data</GlassOverMedia>
+</GlassMedia>`,
   },
   {
     label: "Vanilla",
     lang: "js",
-    code: `import { createMediaSurface, glass } from "@tomagranate/liquid-glass";
+    code: `import { createGlassMedia, glassOverMedia } from "@tomagranate/liquid-glass";
 
-createMediaSurface(document.querySelector("canvas"), { live: true });
-glass(document.querySelector(".chart-control"), { radius: 999, background: false });`,
+createGlassMedia(document.querySelector("canvas"), { live: true });
+glassOverMedia(document.querySelector(".chart-control"), { radius: 999 });`,
   },
 ];
 
@@ -275,7 +283,7 @@ export default function App() {
       <div className="app-scroller">
         <main>
           <Hero wallpaper={wallpaper} setWallpaper={setWallpaper} />
-          <ExamplesSection />
+          <ExamplesSection wallpaper={wallpaper} />
           <ComposedScene
             now={now}
             playing={playing}
@@ -297,8 +305,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* General chrome uses the zero-config backdrop/copy route. Content
-          surfaces appear only as bounded islands in the examples below. */}
+      {/* General chrome explicitly targets the live page. */}
       <div className="overlay-layer">
         <Nav />
         <HeroLens />
@@ -318,7 +325,7 @@ export default function App() {
  */
 function Nav() {
   return (
-    <Glass
+    <GlassOverPage
       as="nav"
       className="glassx nav"
       aria-label="Primary"
@@ -344,7 +351,7 @@ function Nav() {
           <a href={REPO}>GitHub</a>
         </div>
       </div>
-    </Glass>
+    </GlassOverPage>
   );
 }
 
@@ -404,9 +411,9 @@ function HeroEngineNote() {
   const label = ENGINE_LABEL[engine] ?? "current";
   return (
     <p className="hero-engine-note">
-      You're seeing the {label} rendition — wallpaper pieces refract a matching
-      copy, and over-budget panes use the frosted fallback. Chromium bends the
-      live page. <a href={SUPPORT_URL}>Browser support →</a>
+      You're seeing the {label} rendition. Page glass uses polished frost.
+      Marked regions and media still refract. Chromium can refract the live
+      page. <a href={SUPPORT_URL}>Browser support →</a>
     </p>
   );
 }
@@ -556,28 +563,27 @@ function Hero({ wallpaper, setWallpaper }) {
   );
 }
 
-/* ── 2. Three kinds of glass ─────────────────────────────────────────────────── */
+/* ── 2. Four explicit glass interfaces ──────────────────────────────────────── */
 
-function ExamplesSection() {
+function ExamplesSection({ wallpaper }) {
   return (
     <section className="scene shell examples" id="examples">
       <div className="scene-head">
         <p className="eyebrow">Made for real interfaces</p>
-        <h2 className="scene-title">Three kinds of glass.</h2>
+        <h2 className="scene-title">Choose what sits behind the glass.</h2>
         <p className="scene-sub">
-          Tell the library what sits behind the glass and it chooses the fastest
-          safe route. Wallpaper, live content, or media—one API, three backends.
+          Each interface names its source. The name also states its browser
+          limits and performance cost.
         </p>
       </div>
       <div className="examples-grid stage">
         <ExamplePane
-          title="Wallpaper glass"
+          title="Page glass"
           caption={
             <>
-              On Chromium the glass bends the <strong>live page</strong>—the
-              wallpaper and any content behind it, like the lines drifting under
-              the pill. On Safari and Firefox it bends a matching copy of the
-              page wallpaper, so content behind is not distorted.
+              Chromium bends the <strong>live page</strong>. Safari and Firefox
+              use polished frost. They do not copy or bend arbitrary page
+              content.
             </>
           }
         >
@@ -589,17 +595,17 @@ function ExamplesSection() {
               <p>watch it bend through</p>
               <p>the pill on Chromium.</p>
             </div>
-            <Glass className="wallpaper-pill" radius={999}>
+            <GlassOverPage className="wallpaper-pill" radius={999}>
               Navigation
-            </Glass>
+            </GlassOverPage>
           </div>
         </ExamplePane>
 
         <ExamplePane
-          title="Content glass"
+          title="Region glass"
           caption={
             <>
-              Register a bounded island and an SVG filter bends its{" "}
+              Mark a bounded region. An SVG filter bends its{" "}
               <strong>own live DOM in every browser</strong>—that is the
               difference from wallpaper glass. The content behind the lens stays
               selectable and clickable.
@@ -607,12 +613,32 @@ function ExamplesSection() {
           }
         >
           <div className="lens-demo" data-demo-case={CASES.content}>
-            <GlassSurface className="lens-demo-surface">
+            <GlassRegion className="lens-demo-surface">
               <span>Conversion</span>
               <strong>42.8%</strong>
               <div className="lens-demo-chart" aria-hidden="true" />
-            </GlassSurface>
+            </GlassRegion>
             <MovableGlass />
+          </div>
+        </ExamplePane>
+
+        <ExamplePane
+          title="Wallpaper glass"
+          caption={
+            <>
+              Use this for <strong>known CSS artwork</strong>. The library can
+              paint that artwork again. Do not use it for arbitrary page UI.
+            </>
+          }
+        >
+          <div className="wallpaper-demo">
+            <GlassOverWallpaper
+              className="wallpaper-pill"
+              wallpaper={`url(${wallpaper.file})`}
+              radius={999}
+            >
+              Brand artwork
+            </GlassOverWallpaper>
           </div>
         </ExamplePane>
 
@@ -838,8 +864,7 @@ function Notification({ gradient, Icon, app, time, title, body }) {
    place; the chart underneath stays a normal interactive element. */
 function MovableGlass() {
   const ref = useRef(null);
-  const handle = useGlass(ref, {
-    background: false,
+  const handle = useGlassOverRegion(ref, {
     quality: "balanced",
     radius: 24,
     depth: 12,
@@ -909,7 +934,7 @@ function PlaygroundScene({ tune, setTune }) {
   const stage = useRef(null);
   const set = (key) => (v) => setTune((t) => ({ ...t, [key]: v }));
   const [copied, setCopied] = useState(false);
-  const snippet = `<Glass radius={32} scale={${Math.round(tune.scale)}} depth={${Math.round(tune.depth)}} chroma={${tune.chroma.toFixed(2)}} blur={${tune.blur.toFixed(1)}} specular={${tune.specular.toFixed(2)}} rimLight={${tune.rimLight.toFixed(2)}} />`;
+  const snippet = `<GlassOverRegion radius={32} scale={${Math.round(tune.scale)}} depth={${Math.round(tune.depth)}} chroma={${tune.chroma.toFixed(2)}} blur={${tune.blur.toFixed(1)}} specular={${tune.specular.toFixed(2)}} rimLight={${tune.rimLight.toFixed(2)}} />`;
 
   const copySnippet = () => {
     navigator.clipboard?.writeText(snippet).catch(() => {});
@@ -934,10 +959,10 @@ function PlaygroundScene({ tune, setTune }) {
       </div>
       <div ref={stage} className="stage playground">
         <div className="specimen-stage">
-          <GlassSurface className="specimen-source">
+          <GlassRegion className="specimen-source">
             <span>Live surface</span>
             <div aria-hidden="true" />
-          </GlassSurface>
+          </GlassRegion>
           <Specimen tune={tune} />
           <div className="specimen-snippet" aria-label="Current material">
             <button
@@ -1024,10 +1049,10 @@ function PlaygroundScene({ tune, setTune }) {
 /* A standalone glass specimen whose material is tuned via handle.update(). */
 function Specimen({ tune }) {
   const ref = useRef(null);
-  const handle = useGlass(ref, { radius: 32, background: false, ...tune });
+  const handle = useGlassOverRegion(ref, { radius: 32, ...tune });
 
   useEffect(() => {
-    handle?.update({ radius: 32, background: false, ...tune });
+    handle?.update({ radius: 32, ...tune });
   }, [handle, tune]);
 
   return (
@@ -1124,10 +1149,20 @@ function WallpaperSwitcher({ current, onSelect }) {
 const SUPPORT_MATRIX = {
   head: ["What you are refracting", "Chrome", "Safari", "Firefox"],
   rows: [
-    ["Automatic glass", "Live page", "Wallpaper copy", "Wallpaper copy"],
-    ["Live UI surface", "Full effect", "Full effect *", "Full effect *"],
-    ["Video & canvas", "Full effect", "Full effect", "Full effect"],
-    ["Fallback appearance", "Blur or tint", "Blur or tint", "Blur or tint"],
+    ["Page", "Live refraction", "Polished frost", "Polished frost"],
+    [
+      "Marked region",
+      "Live refraction",
+      "Live refraction *",
+      "Live refraction *",
+    ],
+    ["Registered media", "WebGL2", "WebGL2", "WebGL2"],
+    [
+      "Known wallpaper",
+      "Painted refraction",
+      "Painted refraction *",
+      "Painted refraction *",
+    ],
   ],
 };
 
@@ -1142,31 +1177,31 @@ const BACKEND_CARDS = [
   },
   {
     id: "copy",
-    title: "Background-copy tier",
-    api: "Safari & Firefox",
-    body: "A positioned copy of the page wallpaper is refracted in place. Page content behind the glass is not bent, and one frame of alignment lag on scroll is inherent to the copy.",
+    title: "Wallpaper tier",
+    api: "GlassOverWallpaper",
+    body: "A known CSS wallpaper is painted again and refracted. This route does not claim to bend arbitrary page content.",
     fallback:
       "Dense or oversized copies switch to the native blur/tint fallback.",
   },
   {
     id: "content",
-    title: "Content surface",
-    api: "all engines",
-    body: "An SVG filter bends a registered island's own pixels, so its live DOM refracts in every browser. Each engine has its own size budget.",
+    title: "Marked region",
+    api: "GlassOverRegion",
+    body: "An SVG filter bends a marked region's live DOM. Each engine has a size budget.",
     fallback: "Over budget → native blur or tint.",
   },
   {
     id: "media",
-    title: "Media surface",
-    api: "WebGL2",
+    title: "Registered media",
+    api: "GlassOverMedia",
     body: "Video and canvas are textured through WebGL2, because browser filters cannot read moving media pixels. Needs same-origin or CORS-enabled media.",
     fallback: "Work stops entirely while the media is off-screen.",
   },
   {
     id: "native",
-    title: "Native fallback",
-    api: "blur / tint",
-    body: "A plain blur-and-tint frosted surface. Triggered by oversized or dense glass, or by engines that cannot run the effect at all — the component stays readable instead of breaking.",
+    title: "Page fallback",
+    api: "GlassOverPage",
+    body: "Safari and Firefox use polished frost for arbitrary page content. Oversized effects can also use this safe fallback.",
     fallback: "This is the fallback. It is always usable.",
   },
 ];
@@ -1184,14 +1219,14 @@ const ENGINE_SHOTS = [
     name: "WebKit (Safari engine)",
     src: "/compare/webkit.png",
     alt: "The vignette rendered in WebKit",
-    caption: "wallpaper-copy refraction + fallbacks",
+    caption: "page frost + marked-source refraction",
   },
   {
     id: "firefox",
     name: "Firefox",
     src: "/compare/firefox.png",
     alt: "The vignette rendered in Firefox",
-    caption: "wallpaper-copy refraction + fallbacks",
+    caption: "page frost + marked-source refraction",
   },
 ];
 
@@ -1202,9 +1237,8 @@ function BrowserSupportPage() {
         <p className="eyebrow">@tomagranate/liquid-glass</p>
         <h1 className="hero-title support-title">Browser support.</h1>
         <p className="lede">
-          The library picks a rendering backend per element, per browser, and
-          degrades to a plain frosted surface before the effect ever hurts the
-          page. Here is what each engine does and what the fallback looks like.
+          Choose the source with a named interface. The library then selects a
+          backend and uses frost before an effect can hurt page performance.
         </p>
         <a className="support-back" href="?">
           ← Back to the overview
@@ -1264,9 +1298,8 @@ function BrowserSupportPage() {
       <section className="support-section">
         <h2 className="scene-title support-h2">The same page, three engines</h2>
         <p className="scene-sub">
-          One build, no per-browser forks. This vignette captured in each engine
-          — the difference is entirely in the rendering backend the library
-          picked.
+          One build uses the same component tree. The named source defines the
+          result. The browser only changes the available backend.
         </p>
         <div className="engine-compare">
           {ENGINE_SHOTS.map((shot) => (
@@ -1303,20 +1336,20 @@ function BrowserSupportPage() {
         <div className="support-ladder">
           <div className="support-demo">
             <p className="support-demo-label">Full refraction</p>
-            <Glass className="ladder-sample">
+            <GlassOverPage className="ladder-sample">
               <span>The quick brown fox</span>
-            </Glass>
-            <code className="support-demo-code">{"<Glass>"}</code>
+            </GlassOverPage>
+            <code className="support-demo-code">{"<GlassOverPage>"}</code>
           </div>
           <div className="support-demo">
             <p className="support-demo-label">
               Leaner detail — still refracting
             </p>
-            <Glass className="ladder-sample" quality="performance">
+            <GlassOverPage className="ladder-sample" quality="performance">
               <span>The quick brown fox</span>
-            </Glass>
+            </GlassOverPage>
             <code className="support-demo-code">
-              {'<Glass quality="performance">'}
+              {'<GlassOverPage quality="performance">'}
             </code>
           </div>
           <div className="support-demo">
@@ -1324,12 +1357,12 @@ function BrowserSupportPage() {
             <GlassRoot
               budgets={{ chromium: 20_000, webkit: 20_000, firefox: 20_000 }}
             >
-              <Glass className="ladder-sample" fallback="blur">
+              <GlassOverPage className="ladder-sample" fallback="blur">
                 <span>The quick brown fox</span>
-              </Glass>
+              </GlassOverPage>
             </GlassRoot>
             <code className="support-demo-code">
-              {'<Glass fallback="blur">  // area over budget'}
+              {'<GlassOverPage fallback="blur">'}
             </code>
           </div>
         </div>
@@ -1362,15 +1395,15 @@ function FixturesPage() {
       <div className="fixtures-grid">
         <Fixture demoCase={CASES.partial} title="Partial-overlap composition">
           <div className="partial-stage">
-            <GlassSurface className="partial-surface partial-a">
+            <GlassRegion className="partial-surface partial-a">
               Surface A
-            </GlassSurface>
-            <GlassSurface className="partial-surface partial-b">
+            </GlassRegion>
+            <GlassRegion className="partial-surface partial-b">
               Surface B
-            </GlassSurface>
-            <Glass className="partial-lens" radius={28} background={false}>
+            </GlassRegion>
+            <GlassOverRegion className="partial-lens" radius={28}>
               A + B
-            </Glass>
+            </GlassOverRegion>
           </div>
         </Fixture>
 
@@ -1391,16 +1424,16 @@ function FixturesPage() {
           <GlassRoot
             budgets={{ chromium: 20_000, webkit: 20_000, firefox: 20_000 }}
           >
-            <Glass
+            <GlassOverWallpaper
               className="oversized-sample"
               quality="balanced"
               fallback="blur"
-              background="linear-gradient(135deg, #31d8c6, #402d86 55%, #ff9a52)"
+              wallpaper="linear-gradient(135deg, #31d8c6, #402d86 55%, #ff9a52)"
             >
               <span>
                 Always usable. Full refraction when the budget allows.
               </span>
-            </Glass>
+            </GlassOverWallpaper>
           </GlassRoot>
         </Fixture>
 
@@ -1410,7 +1443,7 @@ function FixturesPage() {
             aria-label="Thirty-two live glass lenses"
           >
             {DENSITY_LENSES.map((id) => (
-              <Glass
+              <GlassOverPage
                 className="density-lens"
                 quality="balanced"
                 preset="thin"
@@ -1418,7 +1451,7 @@ function FixturesPage() {
                 aria-label={`Glass lens ${Number(id)}`}
               >
                 {Number(id)}
-              </Glass>
+              </GlassOverPage>
             ))}
           </div>
         </Fixture>
@@ -1490,16 +1523,18 @@ function ScopeIsolationFixture() {
     <Fixture demoCase={CASES.scopes} title="Nested scope isolation">
       <div className="scope-stage">
         <GlassRoot quality="balanced">
-          <GlassSurface className="scope-surface scope-outer">
+          <GlassRegion className="scope-surface scope-outer">
             Outer scope
-            <Glass className="scope-lens">Outer lens</Glass>
+            <GlassOverRegion className="scope-lens">Outer lens</GlassOverRegion>
             <GlassRoot quality="performance">
-              <GlassSurface className="scope-surface scope-inner">
+              <GlassRegion className="scope-surface scope-inner">
                 Inner scope
-                <Glass className="scope-lens">Inner lens</Glass>
-              </GlassSurface>
+                <GlassOverRegion className="scope-lens">
+                  Inner lens
+                </GlassOverRegion>
+              </GlassRegion>
             </GlassRoot>
-          </GlassSurface>
+          </GlassRegion>
         </GlassRoot>
       </div>
     </Fixture>
@@ -1587,7 +1622,7 @@ function CanvasChart() {
   }, []);
 
   return (
-    <GlassMediaSurface live className="canvas-media-frame">
+    <GlassMedia live className="canvas-media-frame">
       <canvas
         ref={canvasRef}
         className="canvas-media-source"
@@ -1595,19 +1630,18 @@ function CanvasChart() {
         height="360"
         aria-label="Animated live signal chart"
       />
-      <Glass
+      <GlassOverMedia
         as="button"
         type="button"
         className="canvas-media-control"
-        background={false}
         radius={999}
         depth={18}
         scale={56}
         tint="rgba(5,12,25,.22)"
       >
         Inspect live data
-      </Glass>
-    </GlassMediaSurface>
+      </GlassOverMedia>
+    </GlassMedia>
   );
 }
 

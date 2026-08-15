@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   buildGlassFilter,
+  createGlassMedia,
+  createGlassRegion,
   createMediaSurface,
   createGlassScope,
   createSurface,
   generateDisplacementMap,
   glass,
+  glassOverMedia,
+  glassOverPage,
+  glassOverRegion,
+  glassOverWallpaper,
   moveFilterLens,
   setBackground,
   WebGLGlass,
@@ -14,6 +20,12 @@ import {
 describe("public API", () => {
   it("exports the vanilla surface × lens API", () => {
     expect(glass).toBeTypeOf("function");
+    expect(glassOverPage).toBeTypeOf("function");
+    expect(glassOverRegion).toBeTypeOf("function");
+    expect(glassOverMedia).toBeTypeOf("function");
+    expect(glassOverWallpaper).toBeTypeOf("function");
+    expect(createGlassRegion).toBeTypeOf("function");
+    expect(createGlassMedia).toBeTypeOf("function");
     expect(createSurface).toBeTypeOf("function");
     expect(createMediaSurface).toBeTypeOf("function");
     expect(createGlassScope).toBeTypeOf("function");

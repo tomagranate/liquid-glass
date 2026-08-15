@@ -11,9 +11,8 @@
  * 2. rect overlap decides registration.
  * 3. content surface + overlap → sub-lens in that surface's shared filter.
  * 4. media surface + overlap → lens instance in the surface's WebGL pass.
- * 5. `.lg-bg` paints the bent page-background copy iff `background !== false`
- *    and the union of overlapping surface rects does not fully cover the
- *    lens (1px per-edge tolerance).
+ * 5. Automatic glass uses native frost when no live source can serve it.
+ *    A painted copy is available only for a caller-supplied CSS background.
  * 6. a Safari over-budget surface puts its lenses' `.lg-bg` on native
  *    `backdrop-filter` instead.
  * 7. a lens overlapping N surfaces holds N registrations simultaneously.
@@ -78,6 +77,7 @@ import type {
   GlassHandle,
   GlassOptions,
   GlassPreset,
+  GlassUseCase,
   ResolvedLensMaterial,
 } from "./types.js";
 
@@ -314,6 +314,7 @@ export function glass(
   element: HTMLElement,
   options: GlassOptions = {},
   runtime?: ScopeRuntime,
+  useCase: GlassUseCase = "auto",
 ): GlassHandle {
   const opts: GlassOptions = { ...options };
   const panel = createPanel(element);
@@ -326,7 +327,9 @@ export function glass(
   // and media behind it, so registering would bend twice.
   const backdropSupported = supportsBackdropUrlFilter();
   const backdropEligible = (): boolean =>
-    backdropSupported && (opts.background ?? "auto") === "auto";
+    (useCase === "auto" || useCase === "page") &&
+    backdropSupported &&
+    (opts.background ?? "auto") === "auto";
 
   /** Identity of this lens's registrations across all surfaces. */
   const key = {};
@@ -523,12 +526,29 @@ export function glass(
         }
         list.push(surface);
       }
-      return { list, explicit: true };
+      return {
+        list: list.filter(
+          (surface) =>
+            useCase === "auto" ||
+            (useCase === "region" && surface.kind === "content") ||
+            (useCase === "media" && surface.kind === "media"),
+        ),
+        explicit: true,
+      };
     }
+    if (useCase === "page" || useCase === "wallpaper") {
+      return { list: [], explicit: false };
+    }
+    const list = runtime
+      ? [...runtime.content, ...runtime.media]
+      : [...listContentSurfaces(), ...listMediaSurfaces()];
     return {
-      list: runtime
-        ? [...runtime.content, ...runtime.media]
-        : [...listContentSurfaces(), ...listMediaSurfaces()],
+      list: list.filter(
+        (surface) =>
+          useCase === "auto" ||
+          (useCase === "region" && surface.kind === "content") ||
+          (useCase === "media" && surface.kind === "media"),
+      ),
       explicit: false,
     };
   }
@@ -612,7 +632,7 @@ export function glass(
           if (explicit && !warnedExcluded.has(surface)) {
             warnedExcluded.add(surface);
             console.warn(
-              "liquid-glass: a lens cannot refract a surface that contains it (or that it contains); the pair is skipped and the lens refracts the background copy instead.",
+              "liquid-glass: a lens cannot refract a region that contains it, or that it contains. The region is skipped.",
             );
           }
           continue;
@@ -790,15 +810,35 @@ export function glass(
     const bgOpt = opts.background ?? "auto";
     const fallback = opts.fallback ?? "blur";
     const anyNative = nativePolicy !== null;
+    const requestedSourceUnavailable =
+      (useCase === "page" && !backdropEligible()) ||
+      ((useCase === "region" || useCase === "media") &&
+        coveringRects.length === 0) ||
+      (useCase === "auto" &&
+        bgOpt === "auto" &&
+        runtime?.background == null &&
+        !backdropEligible() &&
+        coveringRects.length === 0);
     let mode: "hidden" | "native" | "backdrop" | "paint";
     if (tooSmall) mode = "hidden";
     else if (anyNative && fallback === "blur") mode = "native";
     else if (anyNative) mode = "hidden";
+    else if (requestedSourceUnavailable && fallback === "blur") mode = "native";
+    else if (requestedSourceUnavailable) mode = "hidden";
     else if (bgOpt === false) mode = "hidden";
     // An explicit CSS-string background cannot be sampled by the compositor,
     // so it stays on the painted-copy path even on the backdrop tier.
     else if (backdropEligible()) mode = "backdrop";
     else if (unionCovers(lensRect, coveringRects)) mode = "hidden";
+    // Automatic glass never starts the painted-copy path. If a marked region
+    // covers only part of the lens, keep the region effect and hide the page
+    // layer. Callers can use glassOverWallpaper for an explicit copied source.
+    else if (
+      useCase === "auto" &&
+      bgOpt === "auto" &&
+      runtime?.background == null
+    )
+      mode = "hidden";
     else mode = "paint";
 
     if (mode === "paint" && runtime) {
@@ -879,7 +919,7 @@ export function glass(
       bg.style.top = "0px";
       bg.style.width = "100%";
       bg.style.height = "100%";
-      bg.style.transform = "translateZ(0)";
+      bg.style.transform = isSafariEngine() ? "translateZ(0)" : "";
       bg.style.borderRadius = "inherit";
       bg.style.backdropFilter = NATIVE_BACKDROP;
       bg.style.setProperty("-webkit-backdrop-filter", NATIVE_BACKDROP);
@@ -1218,7 +1258,14 @@ export function glass(
     update(patch: GlassOptions) {
       if (destroyed) return;
       const prevSig = materialSig();
-      Object.assign(opts, patch);
+      if (useCase === "auto") {
+        Object.assign(opts, patch);
+      } else {
+        const appearance = { ...patch };
+        delete appearance.surfaces;
+        delete appearance.background;
+        Object.assign(opts, appearance);
+      }
       sync(materialSig() !== prevSig);
       syncLive();
     },

@@ -1,61 +1,70 @@
 # Architecture
 
-How the liquid-glass effect works: the surfaces-×-lenses model, the three
-backends that feed a lens (background copy, in-place content filter, WebGL
-media), and the Chromium-only zero-lag backdrop tier that collapses them into a
-compositor-sampled `backdrop-filter`. See the [README](README.md) for
-installation and usage.
+This document describes the source model and rendering backends. See the
+[README](README.md) for installation and usage.
+
+## Public source contract
+
+The public API uses relationship names. Each name states what sits behind the
+glass.
+
+| Source | React lens | Vanilla lens | Source registration |
+| --- | --- | --- | --- |
+| Arbitrary live page | `<GlassOverPage>` | `glassOverPage()` | None |
+| Marked live DOM region | `<GlassOverRegion>` | `glassOverRegion()` | `<GlassRegion>` / `createGlassRegion()` |
+| Image, video, or canvas | `<GlassOverMedia>` | `glassOverMedia()` | `<GlassMedia>` / `createGlassMedia()` |
+| Known CSS wallpaper | `<GlassOverWallpaper>` | `glassOverWallpaper()` | CSS string on the lens call |
+
+`glass()` and `<Glass>` are compatibility interfaces. They select overlapping
+registered sources. They use live page refraction on Chrome. They use native
+frost when no marked source is available on Safari or Firefox.
+
+The implementation still uses the terms `content surface`, `media surface`,
+and `background copy`. These are backend terms. They are not public choices.
 
 ## The key idea and progressive backend contract
 
-Most web "liquid glass" demos use `backdrop-filter: url(#filter)`, which only
-works in Chromium. This library sidesteps that entirely. (Chromium *also* gets an
-optional zero-lag tier built on `backdrop-filter: url()` — see
-[The Chromium zero-lag backdrop tier](#the-chromium-zero-lag-backdrop-tier) — but
-that is a per-engine optimisation layered on top of the copy path, never the
-cross-browser foundation.)
+Most web liquid-glass demos use `backdrop-filter: url(#filter)`. This works only
+in Chromium. This library exposes that limit through `glassOverPage()`.
+Safari and Firefox use native frost for the same interface.
 
 The whole effect rests on a single SVG filter primitive, **`feDisplacementMap`**.
 `feDisplacementMap` takes two inputs — the painted content and a displacement map
 we generate — and shifts each pixel of the content by an amount the map encodes.
-**Nothing is sampled from underneath the glass; the content's own pixels are the
-ones moving.** So the refraction is a plain `filter: url(#glass)` applied to a
-**copy of what sits behind the glass**, painted on its own layer and bent by the
-map. Because it is an ordinary SVG `filter` (not `backdrop-filter`), the copied
-and bounded-content paths are available in Chromium, Firefox, and Safari. They
-are not equally cheap: Firefox may software-render displacement and WebKit has
-strict filter limits, so policy can select native blur, tint, or no effect before
-an expensive path harms the page.
+Marked regions and known wallpapers use a plain `filter: url(#glass)`. The
+filter bends pixels from the selected source. Firefox can use software
+rendering. WebKit has strict size limits. Runtime policy can therefore select
+native blur, tint, or no effect before an expensive path harms the page.
 
 Surfaces an SVG filter can't read — a `<canvas>` QR code, a playing `<video>` —
 fall back to a small WebGL shader fed the same displacement (see
 [The WebGL texture backend](#the-webgl-texture-backend)).
 
-## The model: surfaces × lenses
+## The internal model: sources × lenses
 
-The public API has two nouns and a router that connects them.
+The public API names a source relationship. The internal router connects each
+lens to one source family.
 
 The router belongs to a `GlassScope`. Top-level functions use a default scope;
 `createGlassScope()` and React `<GlassRoot>` create isolated registries,
-background state, policy defaults, budgets, and diagnostics. Auto routing means
-all geometrically overlapping surfaces in that scope. DOM ancestry is not a
-routing signal, so portals and remote DOM remain deterministic.
+wallpaper state, policy defaults, budgets, and diagnostics. Automatic routing
+finds overlapping registered sources in that scope.
 
-- A **lens** is a glass panel: `glass(el)` / `<Glass>`. The library styles its
-  chrome and routes its refraction per overlapping surface.
+- A **lens** is a glass panel. A named lens restricts routing to one source
+  family.
 - A **surface** is a registered pixel source a lens can refract. There are three
   kinds, one backend each:
-  - **Content surface** (`createSurface`): a live DOM subtree. One SVG filter is
+  - **Region source** (`createGlassRegion`): a live DOM subtree. One SVG filter is
     applied *to the surface element* — pixels bend **in place**, at the surface's
     own z-position, and stay selectable and clickable.
-  - **Media surface** (`createMediaSurface`): a `<video>`/`<canvas>`/`<img>` an
+  - **Media source** (`createGlassMedia`): a `<video>`/`<canvas>`/`<img>` an
     SVG filter can't read. A WebGL overlay canvas is drawn over the media rect.
-  - **Background** (implicit singleton): the page background. Not an element —
-    each lens paints its own bent copy of it.
+  - **Wallpaper source**: a known CSS string. Each wallpaper lens paints and
+    bends its own copy.
 
-A lens over N surfaces holds N registrations at once, and a lens over no surface
-still refracts the background copy. Page stacking order composes an in-place
-content bend, a WebGL media overlay, and a lens's background copy for free.
+An automatic lens can hold several source registrations. A named region or
+media lens stays within its requested family. A lens with no available source
+uses its configured fallback.
 
 The supported topology is a positioned wrapper containing the pixel source and
 the lens as overlapping **siblings**:
@@ -69,13 +78,12 @@ the lens as overlapping **siblings**:
 
 The surface must not contain the lens, and the lens must not contain the
 surface. A filter applied to an ancestor would also bend the lens and its crisp,
-interactive children. When an example explicitly demonstrates content SVG or
-media WebGL routing, its lens also sets `background: false`; otherwise
-Chromium's higher-priority compositor backdrop tier intentionally wins.
+interactive children. Named region and media lenses disable page routing by
+construction.
 
 ### The panel DOM contract
 
-`glass()` (and `<Glass>` from the framework-isolated `/react` entry) build this structure on the host element. React
+All lens functions and components build this structure on the host element. React
 renders the layer children itself; the core **adopts** any `.lg-bg`/`.lg-sheen`
 it finds and creates them otherwise (`.lg-spec` is always core-created, never
 adopted). `destroy()` removes only nodes it created and restores every inline
@@ -84,7 +92,7 @@ style it wrote.
 ```
 element.lg          the lens (position != static, overflow hidden, rounded,
  │                  isolation, tint background, shadow)
- ├─ .lg-bg          bent page-background copy (optional). ONE element carrying
+ ├─ .lg-bg          page, wallpaper, or native-frost layer (optional).
  │                  a painted background + `filter: url(#lens-filter)`, sized
  │                  lens + sampling margin and pulled back by -margin so the rim
  │                  never samples past the copy. pointer-events none, z-index 0.
@@ -340,30 +348,22 @@ copy when one is destroyed).
 
 On lens create/update and on every geometry invalidation:
 
-0. **Chromium backdrop tier (highest priority).** If `supportsBackdropUrlFilter()`
-   and `background` is `"auto"`, the lens skips surface registration entirely and
-   `.lg-bg` becomes a `backdrop-filter: url()` carrier the compositor samples at
-   composite time (see
-   [The Chromium zero-lag backdrop tier](#the-chromium-zero-lag-backdrop-tier)).
-   Rules 1–5 do not run. An explicit CSS-string `background`, or
-   `background: false`, falls through to the rules below.
-
-For each candidate surface (all surfaces in the current scope, or the explicit
-same-scope `opts.surfaces` list):
-
-1. **Descendant exclusion.** If the surface contains the lens or the lens
-   contains the surface, the pair never registers (filtering would bend the
-   lens's own crisp children); the lens refracts the background copy instead. A
-   dev-warning fires once only if the surface was named explicitly.
-2. **Overlap.** Rect intersection decides registration.
-3. **Content surface + overlap** → a sub-lens in that surface's shared filter.
-4. **Media surface + overlap** → a lens instance in the surface's WebGL pass.
-5. **Background copy** paints iff `background !== false` and the union of
-   overlapping content/media surface rects does not fully cover the lens (exact
-   coverage via coordinate compression, 1px per-edge tolerance). Fully covered →
-   `.lg-bg` is hidden. Partial overlap uses one reusable even-odd SVG clip path;
-   surface intersections become seam-expanded holes and moves mutate only `d`.
-6. **Runtime policy.** Provisional device-pixel area budgets are 3,000,000 for
+0. **Source restriction.** The named API selects page, region, media, or
+   wallpaper. Automatic glass can inspect all registered source families.
+1. **Page route.** Chrome uses `backdrop-filter: url()`. Safari and Firefox use
+   native frost. This route never paints a guessed page copy.
+2. **Descendant exclusion.** A marked source cannot contain its lens. A lens
+   cannot contain its marked source. The pair is skipped.
+3. **Overlap.** Rectangle intersection decides registration.
+4. **Region overlap.** The router adds a sub-lens to the region's shared SVG
+   filter.
+5. **Media overlap.** The router adds a lens instance to the media WebGL pass.
+6. **Wallpaper route.** The router paints the supplied CSS source and applies a
+   lens SVG filter. The compatibility API can also use `setBackground()` as an
+   explicit wallpaper source.
+7. **Missing source.** The lens uses native frost, tint, or no effect. The
+   `fallback` option selects this result.
+8. **Runtime policy.** Provisional device-pixel area budgets are 3,000,000 for
    Chromium, 750,000 for Firefox, and 1,500,000 for WebKit. Quality changes the
    budget monotonically and caps effective DPR/chroma/specular. WebKit retains
    its hard 2048 device-pixel dimension. Exceeded work enters the configured
@@ -385,7 +385,7 @@ excluded from the map/filter rebuild signature, so a colour or opacity change
 ## The media backend (WebGL)
 
 For a surface that's already a texture — an image, a `<canvas>`, a `<video>`, or
-any `TexImageSource` — an SVG filter can't read the pixels. `createMediaSurface`
+any `TexImageSource` — an SVG filter can't read the pixels. `createGlassMedia`
 positions an overlay `<canvas class="lgm-overlay">` over the media rect and uses
 `WebGLGlass` to refract it. Displacement is computed analytically in a fragment
 shader (the same rounded-rect SDF as the PNG map, evaluated per fragment), and
@@ -400,26 +400,24 @@ r.setLenses([{ x, y, w, h, radius, depth, scale, chroma, specular }]);
 r.render();
 ```
 
-`createMediaSurface(media, { live })` wraps this: `live: true` runs an
+`createGlassMedia(media, { live })` wraps this: `live: true` runs an
 upload+render loop, but only while ≥1 lens is registered *and* the media rect is
 on-viewport; a static source (`live: false`) uploads once and re-renders on lens
 geometry change. Without WebGL2 the surface registers but never activates —
-lenses over it fall back to the background-copy path (routing rule 5 treats an
-inactive media surface as non-covering) — and it warns once.
+lenses over it use their configured fallback. The library warns once.
 
 ### Which backend feeds a lens?
 
-- **Standalone background** (default, no surface) — Chromium samples the live
-  backdrop in the compositor; Safari and Firefox use a bent CSS copy of the
-  page background. This is the route for standalone panels over wallpaper.
-- **Content filter-on-DOM** (`createSurface`) — one shared SVG filter on live
+- **Page** (`glassOverPage`) — Chromium samples the live backdrop. Safari and
+  Firefox use native frost.
+- **Region filter-on-DOM** (`createGlassRegion`) — one shared SVG filter on live
   page content: cross-browser, keeps content interactive and in place, O(1)
-  filter per surface.
-- **Media WebGL** (`createMediaSurface`) — for surfaces an SVG filter can't read
+  filter per region.
+- **Media WebGL** (`createGlassMedia`) — for sources an SVG filter cannot read
   (canvas, video). Requires WebGL2.
+- **Wallpaper copy** (`glassOverWallpaper`) — a caller-supplied CSS source.
 
-A single lens can use several at once (e.g. a dropdown over a content surface and
-the wallpaper).
+Only automatic compatibility glass can combine several registered sources.
 
 ## Safari constraints and countermeasures
 
@@ -465,23 +463,21 @@ uses a different GPU path and remains the correctness gate for release.
 
 ### Backend tiers
 
-One public API routes each surface/lens pair to the strongest backend the engine
-can run reliably:
+Each named interface stays within its source family:
 
-| Backend | Chromium / Firefox | Safari |
-| --- | --- | --- |
-| Background clone | Full fidelity | Full fidelity; lens-sized static filters move by background-position, not SVG filter mutation. |
-| Media WebGL | Full fidelity | Full fidelity; no SVG filter is involved. |
-| Content filter-on-DOM | Full refraction with native `feImage` mutation moves | Conditional full refraction within the size budget, using the epsilon flush path for moving lenses. Over-budget surfaces degrade to native `backdrop-filter: blur() saturate()` plus tint, rim and sheen. |
+| Interface | Chrome | Safari | Firefox |
+| --- | --- | --- | --- |
+| Page | Live compositor refraction | Native frost | Native frost |
+| Region | SVG refraction | SVG refraction within budget | SVG refraction within budget |
+| Media | WebGL2 refraction | WebGL2 refraction | WebGL2 refraction |
+| Wallpaper | Painted SVG refraction | Painted SVG refraction within budget | Painted SVG refraction within budget |
 
 The degrade is per surface registration. The panel chrome stays coherent; only
 live-content refraction is simplified on Safari when the surface is too large.
 
-On Chromium, an `auto`-background lens does not use the background-clone row at
-all: it routes through the [zero-lag backdrop tier](#the-chromium-zero-lag-backdrop-tier)
-above, where the compositor bends wallpaper and live content together with no
-scroll lag. That tier is Chromium-only; Safari and Firefox keep the clone/filter
-rows in the table.
+On Chrome, page glass routes through the
+[zero-lag backdrop tier](#the-chromium-zero-lag-backdrop-tier). Safari and
+Firefox do not use a painted copy for page glass.
 
 Per-lens frost remains out of scope for v0.1. A shared content-surface filter can
 carry shared blur, but the spike did not prove a cheap, masked, movable per-lens
@@ -502,7 +498,7 @@ src/
   core/glass.ts               glass() — routing/orchestration
   core/liquid-glass-webgl.ts  WebGL2 backend for texture sources (image/canvas/video)
   core/liquid-glass.css       structural styles for the .lg-* / .lgs-* / .lgm-* layers
-  react/index.tsx             Glass, GlassSurface, GlassMediaSurface, useGlass, useSurface, useMediaSurface
+  react/index.tsx             named glass components, source registration, hooks, compatibility aliases
   index.ts                    public entry
   core/*.test.ts              unit tests (jsdom) next to each module
   core/glass.browser.test.ts  structural browser suite (chromium/webkit/firefox)

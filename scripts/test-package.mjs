@@ -44,10 +44,10 @@ try {
   const vanilla = await fixture(
     "vanilla-consumer",
     `import { createRequire } from "node:module";
-import { glass, createSurface } from "@tomagranate/liquid-glass";
-if (typeof glass !== "function" || typeof createSurface !== "function") process.exit(1);
+import { glass, glassOverPage, glassOverRegion, glassOverMedia, glassOverWallpaper, createGlassRegion, createGlassMedia } from "@tomagranate/liquid-glass";
+if ([glass, glassOverPage, glassOverRegion, glassOverMedia, glassOverWallpaper, createGlassRegion, createGlassMedia].some((value) => typeof value !== "function")) process.exit(1);
 const required = createRequire(import.meta.url)("@tomagranate/liquid-glass");
-if (typeof required.glass !== "function") process.exit(1);
+if (typeof required.glass !== "function" || typeof required.glassOverRegion !== "function") process.exit(1);
 `,
   );
   run(
@@ -70,10 +70,10 @@ if (typeof required.glass !== "function") process.exit(1);
   const react = await fixture(
     "react-consumer",
     `import { createRequire } from "node:module";
-import { Glass, useGlass } from "@tomagranate/liquid-glass/react";
-if (typeof Glass !== "function" || typeof useGlass !== "function") process.exit(1);
+import { Glass, GlassOverPage, GlassOverRegion, GlassOverMedia, GlassOverWallpaper, GlassRegion, GlassMedia, useGlass } from "@tomagranate/liquid-glass/react";
+if ([Glass, GlassOverPage, GlassOverRegion, GlassOverMedia, GlassOverWallpaper, GlassRegion, GlassMedia, useGlass].some((value) => typeof value !== "function")) process.exit(1);
 const required = createRequire(import.meta.url)("@tomagranate/liquid-glass/react");
-if (typeof required.Glass !== "function") process.exit(1);
+if (typeof required.Glass !== "function" || typeof required.GlassOverRegion !== "function") process.exit(1);
 `,
   );
   run(

@@ -50,7 +50,9 @@ export function expectedBackendFamily(
       ? ["media-webgl"]
       : ["backdrop", "background-copy", "native", "none"];
   }
-  if (demoCase === "video-media") return ["none"];
+  if (demoCase === "video-media") {
+    return mediaWebglAvailable ? ["media-webgl"] : ["none"];
+  }
   if (
     [
       "bounded-content-surface",

@@ -512,7 +512,7 @@ describe("browser: background copy (.lg-bg)", () => {
     setBackground(null);
   });
 
-  it("paints a filtered, viewport-registered page-background copy for an uncovered lens", () => {
+  it("paints a filtered, viewport-registered explicit wallpaper", () => {
     document.body.style.cssText =
       "margin:0;overflow:hidden;background:linear-gradient(90deg, rgb(255,0,0), rgb(0,0,255));";
     setBackground(null); // re-detect the freshly set body background
@@ -522,7 +522,12 @@ describe("browser: background copy (.lg-bg)", () => {
       "position:fixed;left:40px;top:30px;width:120px;height:60px;";
     document.body.appendChild(lensEl);
 
-    const handle = glass(lensEl, { scale: 10, blur: 0, chroma: 0 });
+    const handle = glass(lensEl, {
+      scale: 10,
+      blur: 0,
+      chroma: 0,
+      background: "linear-gradient(90deg, rgb(255,0,0), rgb(0,0,255))",
+    });
 
     const bg = lensEl.querySelector<HTMLElement>(":scope > .lg-bg");
     expect(bg).toBeTruthy();
@@ -565,7 +570,12 @@ describe("browser: background copy (.lg-bg)", () => {
     document.body.appendChild(lensEl);
 
     const surface = createSurface(surfaceEl);
-    const handle = glass(lensEl, { scale: 10, blur: 0, chroma: 0 });
+    const handle = glass(lensEl, {
+      scale: 10,
+      blur: 0,
+      chroma: 0,
+      background: "white",
+    });
 
     expect(lensEl.querySelector(":scope > .lg-bg")).toBeNull();
 
@@ -768,7 +778,7 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
     }
   });
 
-  it("routes .lg-bg to the compositor backdrop tier on Chromium, the copy tier elsewhere", () => {
+  it("routes page glass to live refraction on Chromium and frost elsewhere", () => {
     document.body.style.cssText =
       "margin:0;overflow:hidden;background:linear-gradient(90deg, rgb(255,0,0), rgb(0,0,255));";
     setBackground(null); // re-detect the freshly set body background
@@ -778,7 +788,12 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
       "position:fixed;left:40px;top:30px;width:120px;height:60px;";
     document.body.appendChild(lensEl);
 
-    const handle = glass(lensEl, { scale: 10, blur: 0, chroma: 0 });
+    const scope = createGlassScope();
+    const handle = scope.glassOverPage(lensEl, {
+      scale: 10,
+      blur: 0,
+      chroma: 0,
+    });
 
     const bg = lensEl.querySelector<HTMLElement>(":scope > .lg-bg");
     expect(bg).toBeTruthy();
@@ -809,13 +824,16 @@ describe("browser: backdrop tier (backdrop-filter: url())", () => {
       // No viewport-registration writes (the copy tier's scroll work).
       expect(bg.style.backgroundPosition).not.toMatch(/px/);
     } else {
-      // Safari/Firefox: the painted-copy tier, exactly as before.
-      expect(style.backgroundImage).toContain("linear-gradient");
-      expect(bg.style.filter).toContain("url(");
+      // Safari/Firefox: safe native frost. No page copy is painted.
+      expect(style.backgroundImage).toBe("none");
+      expect(bg.style.filter).toBe("");
+      expect(style.backdropFilter).toContain("blur(");
       expect(style.backdropFilter || "none").not.toContain("url(");
+      expect(handle.backends).toContain("native");
     }
 
     handle.destroy();
+    scope.destroy();
     expect(lensEl.querySelector(".lg-bg")).toBeNull();
   });
 

@@ -19,16 +19,29 @@ import {
   useRef,
   useState,
 } from "react";
-import { createMediaSurface, createSurface, glass } from "../core/api.js";
+import {
+  createGlassMedia,
+  createGlassRegion,
+  glass,
+  glassOverMedia,
+  glassOverPage,
+  glassOverRegion,
+  glassOverWallpaper,
+} from "../core/api.js";
 import { createGlassScope, defaultGlassScope } from "../core/scope.js";
 import type {
+  GlassAppearanceOptions,
   GlassDiagnostics,
   GlassHandle,
+  GlassMediaHandle,
   GlassOptions,
+  GlassOverMediaOptions,
+  GlassOverRegionOptions,
+  GlassRegionHandle,
   GlassScope,
   GlassScopeOptions,
+  GlassSourceHandle,
   MediaSurfaceOptions,
-  SurfaceHandle,
   SurfaceOptions,
 } from "../core/types.js";
 
@@ -161,6 +174,7 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 function useGlassHandle(
   ref: RefObject<HTMLElement | null>,
   opts: GlassOptions,
+  request: GlassRequest = { useCase: "auto" },
 ): GlassHandle | null {
   const scope = useContext(GlassScopeContext);
   const [handle, setHandle] = useState<GlassHandle | null>(null);
@@ -171,9 +185,7 @@ function useGlassHandle(
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const h = scope
-      ? scope.glass(el, optsRef.current)
-      : glass(el, optsRef.current);
+    const h = createRequestedGlass(scope, el, optsRef.current, request);
     handleRef.current = h;
     setHandle(h);
     return () => {
@@ -182,7 +194,14 @@ function useGlassHandle(
       setHandle(null);
     };
     // Created once; option changes flow through the update effect below.
-  }, [ref, scope]);
+  }, [
+    ref,
+    scope,
+    request.useCase,
+    request.region,
+    request.media,
+    request.wallpaper,
+  ]);
 
   const key = glassOptionsKey(opts);
   useEffect(() => {
@@ -190,6 +209,45 @@ function useGlassHandle(
   }, [key, opts.surfaces, opts.onBackendChange]);
 
   return handle;
+}
+
+type GlassRequest = {
+  useCase: "auto" | "page" | "region" | "media" | "wallpaper";
+  region?: GlassRegionHandle | readonly GlassRegionHandle[];
+  media?: GlassMediaHandle | readonly GlassMediaHandle[];
+  wallpaper?: string;
+};
+
+function createRequestedGlass(
+  scope: GlassScope | null,
+  element: HTMLElement,
+  options: GlassOptions,
+  request: GlassRequest,
+): GlassHandle {
+  if (request.useCase === "page") {
+    return scope
+      ? scope.glassOverPage(element, options)
+      : glassOverPage(element, options);
+  }
+  if (request.useCase === "region") {
+    const named = { ...options, region: request.region };
+    return scope
+      ? scope.glassOverRegion(element, named)
+      : glassOverRegion(element, named);
+  }
+  if (request.useCase === "media") {
+    const named = { ...options, media: request.media };
+    return scope
+      ? scope.glassOverMedia(element, named)
+      : glassOverMedia(element, named);
+  }
+  if (request.useCase === "wallpaper") {
+    const wallpaper = request.wallpaper ?? "none";
+    return scope
+      ? scope.glassOverWallpaper(element, wallpaper, options)
+      : glassOverWallpaper(element, wallpaper, options);
+  }
+  return scope ? scope.glass(element, options) : glass(element, options);
 }
 
 /* ── components ───────────────────────────────────────────────────────────── */
@@ -200,6 +258,29 @@ export type GlassProps<As extends ElementType = "div"> = {
 } & GlassOptions &
   Omit<ComponentPropsWithoutRef<As>, "as" | "children" | keyof GlassOptions>;
 
+type ExplicitGlassProps<As extends ElementType> = Omit<
+  GlassProps<As>,
+  "surfaces" | "background"
+>;
+
+export type GlassOverPageProps<As extends ElementType = "div"> =
+  ExplicitGlassProps<As>;
+
+export type GlassOverRegionProps<As extends ElementType = "div"> =
+  ExplicitGlassProps<As> & {
+    region?: GlassRegionHandle | readonly GlassRegionHandle[];
+  };
+
+export type GlassOverMediaProps<As extends ElementType = "div"> =
+  ExplicitGlassProps<As> & {
+    media?: GlassMediaHandle | readonly GlassMediaHandle[];
+  };
+
+export type GlassOverWallpaperProps<As extends ElementType = "div"> =
+  ExplicitGlassProps<As> & {
+    wallpaper: string;
+  };
+
 /**
  * A glass lens panel. Renders the host `<As>` (default `<div>`) carrying the
  * `lg` class, with `.lg-bg` and `.lg-sheen` layer children before `{children}`;
@@ -209,6 +290,50 @@ export type GlassProps<As extends ElementType = "div"> = {
 export function Glass<As extends ElementType = "div">(
   props: GlassProps<As>,
 ): ReactElement {
+  return useGlassElement(props, { useCase: "auto" });
+}
+
+/** Glass over the arbitrary live page. Safari and Firefox use the fallback. */
+export function GlassOverPage<As extends ElementType = "div">(
+  props: GlassOverPageProps<As>,
+): ReactElement {
+  return useGlassElement(props as GlassProps<As>, { useCase: "page" });
+}
+
+/** Glass over marked live DOM regions. */
+export function GlassOverRegion<As extends ElementType = "div">(
+  props: GlassOverRegionProps<As>,
+): ReactElement {
+  const { region, ...rest } = props;
+  return useGlassElement(rest as unknown as GlassProps<As>, {
+    useCase: "region",
+    region,
+  });
+}
+
+/** Glass over registered image, video, or canvas media. */
+export function GlassOverMedia<As extends ElementType = "div">(
+  props: GlassOverMediaProps<As>,
+): ReactElement {
+  const { media, ...rest } = props;
+  return useGlassElement(rest as GlassProps<As>, { useCase: "media", media });
+}
+
+/** Glass over known CSS artwork that the library can paint again. */
+export function GlassOverWallpaper<As extends ElementType = "div">(
+  props: GlassOverWallpaperProps<As>,
+): ReactElement {
+  const { wallpaper, ...rest } = props;
+  return useGlassElement(rest as unknown as GlassProps<As>, {
+    useCase: "wallpaper",
+    wallpaper,
+  });
+}
+
+function useGlassElement<As extends ElementType>(
+  props: GlassProps<As>,
+  request: GlassRequest,
+): ReactElement {
   const { as, children, className, ...rest } = props as GlassProps<As> & {
     as?: ElementType;
     className?: string;
@@ -216,7 +341,7 @@ export function Glass<As extends ElementType = "div">(
   };
   const ref = useRef<HTMLElement>(null);
   const { opts, dom } = splitGlassProps(rest as Record<string, unknown>);
-  useGlassHandle(ref, opts);
+  useGlassHandle(ref, opts, request);
 
   const Component = (as ?? "div") as ElementType;
   return (
@@ -228,7 +353,7 @@ export function Glass<As extends ElementType = "div">(
   );
 }
 
-export type GlassSurfaceProps<As extends ElementType = "div"> = {
+export type GlassRegionProps<As extends ElementType = "div"> = {
   as?: As;
   background?: boolean | string;
   children?: ReactNode;
@@ -238,11 +363,11 @@ export type GlassSurfaceProps<As extends ElementType = "div"> = {
  * Register the host subtree as a content surface (`createSurface`) so lenses
  * refract its live content in place. The core creates/adopts `.lgs-bg`.
  */
-export function GlassSurface<As extends ElementType = "div">(
-  props: GlassSurfaceProps<As>,
+export function GlassRegion<As extends ElementType = "div">(
+  props: GlassRegionProps<As>,
 ): ReactElement {
   const { as, background, children, className, ...rest } =
-    props as GlassSurfaceProps<As> & {
+    props as GlassRegionProps<As> & {
       as?: ElementType;
       className?: string;
       children?: ReactNode;
@@ -254,8 +379,8 @@ export function GlassSurface<As extends ElementType = "div">(
     const el = ref.current;
     if (!el) return;
     const handle = scope
-      ? scope.createSurface(el, { background })
-      : createSurface(el, { background });
+      ? scope.createGlassRegion(el, { background })
+      : createGlassRegion(el, { background });
     return () => handle.destroy();
   }, [background, scope]);
 
@@ -271,7 +396,13 @@ export function GlassSurface<As extends ElementType = "div">(
   );
 }
 
-export type GlassMediaSurfaceProps = {
+/** @deprecated Use {@link GlassRegion}. */
+export const GlassSurface = GlassRegion;
+/** @deprecated Use {@link GlassRegionProps}. */
+export type GlassSurfaceProps<As extends ElementType = "div"> =
+  GlassRegionProps<As>;
+
+export type GlassMediaProps = {
   live?: boolean;
   children?: ReactNode;
 } & Omit<ComponentPropsWithoutRef<"div">, "children">;
@@ -280,7 +411,7 @@ export type GlassMediaSurfaceProps = {
  * Register the first `<video>`/`<canvas>`/`<img>` descendant of the host as a
  * media surface (`createMediaSurface`). Warns if none is found.
  */
-export function GlassMediaSurface(props: GlassMediaSurfaceProps): ReactElement {
+export function GlassMedia(props: GlassMediaProps): ReactElement {
   const { live, children, ...rest } = props;
   const ref = useRef<HTMLDivElement>(null);
   const scope = useContext(GlassScopeContext);
@@ -293,13 +424,13 @@ export function GlassMediaSurface(props: GlassMediaSurfaceProps): ReactElement {
     >("video, canvas, img");
     if (!media) {
       console.warn(
-        "GlassMediaSurface: no <video>, <canvas>, or <img> descendant to register.",
+        "GlassMedia: no <video>, <canvas>, or <img> descendant to register.",
       );
       return;
     }
     const handle = scope
-      ? scope.createMediaSurface(media, { live })
-      : createMediaSurface(media, { live });
+      ? scope.createGlassMedia(media, { live })
+      : createGlassMedia(media, { live });
     return () => handle.destroy();
   }, [live, scope]);
 
@@ -309,6 +440,11 @@ export function GlassMediaSurface(props: GlassMediaSurfaceProps): ReactElement {
     </div>
   );
 }
+
+/** @deprecated Use {@link GlassMedia}. */
+export const GlassMediaSurface = GlassMedia;
+/** @deprecated Use {@link GlassMediaProps}. */
+export type GlassMediaSurfaceProps = GlassMediaProps;
 
 /* ── hooks (escape hatches: one external ref, no markup contract) ──────────── */
 
@@ -325,24 +461,70 @@ export function useGlass(
   return useGlassHandle(ref, opts);
 }
 
+/** Attach glass that explicitly targets the arbitrary live page. */
+export function useGlassOverPage(
+  ref: RefObject<HTMLElement | null>,
+  opts: GlassAppearanceOptions = {},
+): GlassSourceHandle | null {
+  return useGlassHandle(ref, opts, {
+    useCase: "page",
+  }) as GlassSourceHandle | null;
+}
+
+/** Attach glass that explicitly targets marked live DOM regions. */
+export function useGlassOverRegion(
+  ref: RefObject<HTMLElement | null>,
+  opts: GlassOverRegionOptions = {},
+): GlassSourceHandle | null {
+  const { region, ...appearance } = opts;
+  return useGlassHandle(ref, appearance, {
+    useCase: "region",
+    region,
+  }) as GlassSourceHandle | null;
+}
+
+/** Attach glass that explicitly targets registered media. */
+export function useGlassOverMedia(
+  ref: RefObject<HTMLElement | null>,
+  opts: GlassOverMediaOptions = {},
+): GlassSourceHandle | null {
+  const { media, ...appearance } = opts;
+  return useGlassHandle(ref, appearance, {
+    useCase: "media",
+    media,
+  }) as GlassSourceHandle | null;
+}
+
+/** Attach glass over known CSS artwork. */
+export function useGlassOverWallpaper(
+  ref: RefObject<HTMLElement | null>,
+  wallpaper: string,
+  opts: GlassAppearanceOptions = {},
+): GlassSourceHandle | null {
+  return useGlassHandle(ref, opts, {
+    useCase: "wallpaper",
+    wallpaper,
+  }) as GlassSourceHandle | null;
+}
+
 /**
  * Register `ref.current` as a content surface. Returns the {@link SurfaceHandle}
  * (null before mount); destroyed on unmount.
  */
-export function useSurface(
+export function useGlassRegion(
   ref: RefObject<HTMLElement | null>,
   opts: SurfaceOptions = {},
-): SurfaceHandle | null {
+): GlassRegionHandle | null {
   const scope = useContext(GlassScopeContext);
-  const [handle, setHandle] = useState<SurfaceHandle | null>(null);
+  const [handle, setHandle] = useState<GlassRegionHandle | null>(null);
   const { background } = opts;
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const h = scope
-      ? scope.createSurface(el, { background })
-      : createSurface(el, { background });
+      ? scope.createGlassRegion(el, { background })
+      : createGlassRegion(el, { background });
     setHandle(h);
     return () => {
       h.destroy();
@@ -353,26 +535,34 @@ export function useSurface(
   return handle;
 }
 
+/** @deprecated Use {@link useGlassRegion}. */
+export function useSurface(
+  ref: RefObject<HTMLElement | null>,
+  opts: SurfaceOptions = {},
+): GlassRegionHandle | null {
+  return useGlassRegion(ref, opts);
+}
+
 /**
  * Register `ref.current` (a `<video>`/`<canvas>`/`<img>`) as a media surface.
  * Returns the {@link SurfaceHandle} (null before mount); destroyed on unmount.
  */
-export function useMediaSurface(
+export function useGlassMedia(
   ref: RefObject<
     HTMLVideoElement | HTMLCanvasElement | HTMLImageElement | null
   >,
   opts: MediaSurfaceOptions = {},
-): SurfaceHandle | null {
+): GlassMediaHandle | null {
   const scope = useContext(GlassScopeContext);
-  const [handle, setHandle] = useState<SurfaceHandle | null>(null);
+  const [handle, setHandle] = useState<GlassMediaHandle | null>(null);
   const { live } = opts;
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const h = scope
-      ? scope.createMediaSurface(el, { live })
-      : createMediaSurface(el, { live });
+      ? scope.createGlassMedia(el, { live })
+      : createGlassMedia(el, { live });
     setHandle(h);
     return () => {
       h.destroy();
@@ -381,4 +571,14 @@ export function useMediaSurface(
   }, [ref, live, scope]);
 
   return handle;
+}
+
+/** @deprecated Use {@link useGlassMedia}. */
+export function useMediaSurface(
+  ref: RefObject<
+    HTMLVideoElement | HTMLCanvasElement | HTMLImageElement | null
+  >,
+  opts: MediaSurfaceOptions = {},
+): GlassMediaHandle | null {
+  return useGlassMedia(ref, opts);
 }

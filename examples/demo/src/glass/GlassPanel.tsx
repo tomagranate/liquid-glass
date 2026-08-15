@@ -1,16 +1,16 @@
 import type { HTMLAttributes } from "react";
-import type { GlassOptions } from "@tomagranate/liquid-glass";
-import { Glass } from "@tomagranate/liquid-glass/react";
+import type { GlassAppearanceOptions } from "@tomagranate/liquid-glass";
+import { GlassOverPage } from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 export interface GlassPanelProps extends HTMLAttributes<HTMLDivElement> {
   /** Per-instance glass material overrides. */
-  glass?: GlassOptions;
+  glass?: GlassAppearanceOptions;
   /** Extra class for the inner content layer. */
   contentClassName?: string;
 }
 
-const PANEL_GLASS: GlassOptions = {
+const PANEL_GLASS: GlassAppearanceOptions = {
   radius: 26,
   depth: 22,
   scale: 64,
@@ -23,10 +23,7 @@ const PANEL_GLASS: GlassOptions = {
 };
 
 /**
- * A general-purpose glass surface: cards, tiles, docks. A thin wrapper over
- * `<Glass>` — the panel sits inside the page surface, so it refracts whatever
- * is behind it (wallpaper + live content) with no extra wiring. Children ride
- * on top in a content layer and stay crisp and interactive.
+ * A page-glass panel for cards, tiles, and docks. Children stay crisp.
  */
 export function GlassPanel({
   glass,
@@ -36,14 +33,14 @@ export function GlassPanel({
   ...rest
 }: GlassPanelProps) {
   return (
-    <Glass
+    <GlassOverPage
       className={`glassx ${className}`}
       {...PANEL_GLASS}
       {...glass}
       {...rest}
     >
       <div className={`glassx-content ${contentClassName}`}>{children}</div>
-    </Glass>
+    </GlassOverPage>
   );
 }
 

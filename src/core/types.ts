@@ -67,6 +67,9 @@ export type GlassFallback = "blur" | "tint" | "none";
 /** Curated material starting points. Explicit material options always win. */
 export type GlassPreset = "thin" | "regular" | "prominent";
 
+/** The user-visible source relationship requested for a glass lens. */
+export type GlassUseCase = "auto" | "page" | "region" | "media" | "wallpaper";
+
 /** Options for {@link glass}. */
 export interface GlassOptions extends GlassMaterial {
   /** Curated material starting point. Default `"regular"`. */
@@ -77,14 +80,13 @@ export interface GlassOptions extends GlassMaterial {
   fallback?: GlassFallback;
   /** Called only when the stable ordered renderer set changes. */
   onBackendChange?: (backends: readonly GlassBackend[]) => void;
-  /** Surfaces this lens may refract. Default "auto" = every registered surface. */
+  /** Legacy routing control. Prefer the named page, region, or media API. */
   surfaces?: "auto" | SurfaceHandle[];
   /** "live" = geometry re-read every frame (for JS-animated lenses). Default "auto". */
   track?: "auto" | "live";
   /**
-   * The background copy behind uncovered lens area. Default "auto": paint it
-   * unless a content/media surface fully covers the lens. `false` = never,
-   * a CSS string = use that instead of the page background.
+   * Legacy source control. A CSS string selects known wallpaper artwork.
+   * `"auto"` uses a registered source, the Chrome page route, or native frost.
    */
   background?: "auto" | false | string;
 }
@@ -103,7 +105,18 @@ export interface GlassHandle {
   destroy(): void;
 }
 
-/** Options for {@link createSurface}. */
+/** Appearance options shared by the explicit use-case helpers. */
+export type GlassAppearanceOptions = Omit<
+  GlassOptions,
+  "surfaces" | "background"
+>;
+
+/** A glass handle whose source relationship cannot change through update(). */
+export type GlassSourceHandle = Omit<GlassHandle, "update"> & {
+  update(patch: GlassAppearanceOptions): void;
+};
+
+/** Options for {@link createGlassRegion}. */
 export interface SurfaceOptions {
   /**
    * Paint the page background behind this surface's content (inside the
@@ -114,14 +127,36 @@ export interface SurfaceOptions {
   background?: boolean | string;
 }
 
-/** Live handle returned by {@link createSurface} / {@link createMediaSurface}. */
+/** Base handle for a registered source. */
 export interface SurfaceHandle {
   readonly element: HTMLElement;
   refresh(): void;
   destroy(): void;
 }
 
-/** Options for {@link createMediaSurface}. */
+/** A marked live DOM region that a lens can refract. */
+export interface GlassRegionHandle extends SurfaceHandle {
+  readonly sourceType: "region";
+}
+
+/** A registered image, video, or canvas that a lens can refract. */
+export interface GlassMediaHandle extends SurfaceHandle {
+  readonly sourceType: "media";
+}
+
+/** Options for {@link glassOverRegion}. */
+export type GlassOverRegionOptions = GlassAppearanceOptions & {
+  /** Restrict the lens to these regions. Default: overlapping registered regions. */
+  region?: GlassRegionHandle | readonly GlassRegionHandle[];
+};
+
+/** Options for {@link glassOverMedia}. */
+export type GlassOverMediaOptions = GlassAppearanceOptions & {
+  /** Restrict the lens to these media sources. Default: overlapping registered media. */
+  media?: GlassMediaHandle | readonly GlassMediaHandle[];
+};
+
+/** Options for {@link createGlassMedia}. */
 export interface MediaSurfaceOptions {
   /** Re-upload the source every frame while a lens overlaps (playing video). */
   live?: boolean;
@@ -196,11 +231,41 @@ export interface GlassDiagnostics {
 /** Isolated routing/background/runtime owner. */
 export interface GlassScope {
   glass(element: HTMLElement, options?: GlassOptions): GlassHandle;
-  createSurface(element: HTMLElement, options?: SurfaceOptions): SurfaceHandle;
+  glassOverPage(
+    element: HTMLElement,
+    options?: GlassAppearanceOptions,
+  ): GlassSourceHandle;
+  glassOverRegion(
+    element: HTMLElement,
+    options?: GlassOverRegionOptions,
+  ): GlassSourceHandle;
+  glassOverMedia(
+    element: HTMLElement,
+    options?: GlassOverMediaOptions,
+  ): GlassSourceHandle;
+  glassOverWallpaper(
+    element: HTMLElement,
+    wallpaper: string,
+    options?: GlassAppearanceOptions,
+  ): GlassSourceHandle;
+  createGlassRegion(
+    element: HTMLElement,
+    options?: SurfaceOptions,
+  ): GlassRegionHandle;
+  createGlassMedia(
+    media: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
+    options?: MediaSurfaceOptions,
+  ): GlassMediaHandle;
+  /** @deprecated Use {@link createGlassRegion}. */
+  createSurface(
+    element: HTMLElement,
+    options?: SurfaceOptions,
+  ): GlassRegionHandle;
+  /** @deprecated Use {@link createGlassMedia}. */
   createMediaSurface(
     media: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
     options?: MediaSurfaceOptions,
-  ): SurfaceHandle;
+  ): GlassMediaHandle;
   setBackground(background: string | null): void;
   getDiagnostics(): GlassDiagnostics;
   destroy(): void;

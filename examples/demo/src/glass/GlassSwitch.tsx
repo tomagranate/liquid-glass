@@ -1,6 +1,9 @@
 import { type HTMLAttributes, useRef } from "react";
-import type { GlassOptions } from "@tomagranate/liquid-glass";
-import { useGlass, useSurface } from "@tomagranate/liquid-glass/react";
+import type { GlassAppearanceOptions } from "@tomagranate/liquid-glass";
+import {
+  useGlassOverRegion,
+  useGlassRegion,
+} from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 export interface GlassSwitchProps
@@ -8,10 +11,10 @@ export interface GlassSwitchProps
   checked?: boolean;
   onChange?: (checked: boolean) => void;
   /** Per-instance glass material overrides for the thumb. */
-  glass?: GlassOptions;
+  glass?: GlassAppearanceOptions;
 }
 
-const THUMB_GLASS: GlassOptions = {
+const THUMB_GLASS: GlassAppearanceOptions = {
   radius: 999,
   depth: 5,
   scale: 12,
@@ -38,8 +41,8 @@ export function GlassSwitch({
 }: GlassSwitchProps) {
   const trackRef = useRef<HTMLSpanElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
-  useSurface(trackRef);
-  useGlass(thumbRef, { ...THUMB_GLASS, background: false, ...glass });
+  useGlassRegion(trackRef);
+  useGlassOverRegion(thumbRef, { ...THUMB_GLASS, ...glass });
 
   return (
     <div

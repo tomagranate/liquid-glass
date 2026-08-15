@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes } from "react";
-import type { GlassOptions } from "@tomagranate/liquid-glass";
-import { Glass } from "@tomagranate/liquid-glass/react";
+import type { GlassAppearanceOptions } from "@tomagranate/liquid-glass";
+import { GlassOverPage } from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 export interface GlassButtonProps
@@ -8,10 +8,10 @@ export interface GlassButtonProps
   /** Visual weight. `primary` carries a brighter tint; `ghost` is near-clear. */
   variant?: "primary" | "ghost";
   /** Per-instance glass material overrides. */
-  glass?: GlassOptions;
+  glass?: GlassAppearanceOptions;
 }
 
-const BUTTON_GLASS: GlassOptions = {
+const BUTTON_GLASS: GlassAppearanceOptions = {
   radius: 999,
   depth: 12,
   scale: 40,
@@ -22,14 +22,13 @@ const BUTTON_GLASS: GlassOptions = {
   shadow: "0 8px 24px rgba(0,0,0,0.28)",
 };
 
-const VARIANT_GLASS: Record<string, GlassOptions> = {
+const VARIANT_GLASS: Record<string, GlassAppearanceOptions> = {
   primary: { tint: "rgba(255,255,255,0.26)", rimLight: 1.1 },
   ghost: { tint: "rgba(255,255,255,0.03)", rimLight: 0.7, shadow: "none" },
 };
 
 /**
- * A glass button: one `<Glass>` panel refracting whatever is behind it. The
- * label rides on top and stays crisp and clickable.
+ * A page-glass button. The label stays crisp and clickable.
  */
 export function GlassButton({
   children,
@@ -39,7 +38,7 @@ export function GlassButton({
   ...rest
 }: GlassButtonProps) {
   return (
-    <Glass
+    <GlassOverPage
       as="button"
       type="button"
       className={`glassx glassx-button ${className}`}
@@ -49,7 +48,7 @@ export function GlassButton({
       {...rest}
     >
       <span className="glassx-button-label">{children}</span>
-    </Glass>
+    </GlassOverPage>
   );
 }
 

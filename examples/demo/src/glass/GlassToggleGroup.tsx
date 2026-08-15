@@ -5,8 +5,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { GlassOptions } from "@tomagranate/liquid-glass";
-import { useGlass, useSurface } from "@tomagranate/liquid-glass/react";
+import type { GlassAppearanceOptions } from "@tomagranate/liquid-glass";
+import {
+  useGlassOverRegion,
+  useGlassRegion,
+} from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 export interface ToggleOption {
@@ -21,7 +24,7 @@ export interface GlassToggleGroupProps
   onChange?: (value: string) => void;
 }
 
-const PILL_GLASS: GlassOptions = {
+const PILL_GLASS: GlassAppearanceOptions = {
   radius: 999,
   depth: 6,
   scale: 16,
@@ -52,8 +55,8 @@ export function GlassToggleGroup({
   const itemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [pill, setPill] = useState({ left: 0, width: 0 });
 
-  useSurface(trackRef);
-  const handle = useGlass(pillRef, { ...PILL_GLASS, background: false });
+  useGlassRegion(trackRef);
+  const handle = useGlassOverRegion(pillRef, PILL_GLASS);
 
   useLayoutEffect(() => {
     const measure = () => {

@@ -7,16 +7,14 @@
  * pixels are the ones moving. Chromium gets a compositor backdrop tier;
  * Firefox and Safari use budgeted copy/content paths with explicit fallbacks.
  *
- * One call per glass panel — {@link glass} — works
- * with zero configuration over any page, and gets better when the page
- * registers surfaces:
+ * The public API names the source behind each glass panel:
  *
- * - {@link createSurface} registers a live DOM subtree; lenses bend its
- *   pixels in place (content stays selectable and clickable).
- * - {@link createMediaSurface} registers a `<video>`/`<canvas>`/`<img>`;
- *   lenses refract it through a WebGL overlay.
- * - The page background is detected automatically from `document.body`
- *   (override with {@link setBackground}).
+ * - {@link glassOverPage} targets arbitrary live page content.
+ * - {@link glassOverRegion} targets a source from {@link createGlassRegion}.
+ * - {@link glassOverMedia} targets a source from {@link createGlassMedia}.
+ * - {@link glassOverWallpaper} targets known CSS artwork.
+ *
+ * The automatic {@link glass} API remains for compatibility.
  *
  * Import the stylesheet once: `import "@tomagranate/liquid-glass/styles.css"`.
  */
@@ -24,6 +22,12 @@
 // ── Vanilla API ─────────────────────────────────────────────────────────────
 export {
   glass,
+  glassOverPage,
+  glassOverRegion,
+  glassOverMedia,
+  glassOverWallpaper,
+  createGlassRegion,
+  createGlassMedia,
   createSurface,
   createMediaSurface,
   setBackground,
@@ -31,18 +35,25 @@ export {
 export { createGlassScope } from "./core/scope.js";
 export type {
   GlassBackend,
+  GlassAppearanceOptions,
   GlassFallback,
   GlassMaterial,
   GlassOptions,
   GlassHandle,
   GlassPreset,
   GlassQuality,
+  GlassUseCase,
+  GlassOverRegionOptions,
+  GlassOverMediaOptions,
   GlassBudgets,
   GlassDiagnostics,
   GlassScope,
   GlassScopeOptions,
+  GlassSourceHandle,
   SurfaceOptions,
   SurfaceHandle,
+  GlassRegionHandle,
+  GlassMediaHandle,
   MediaSurfaceOptions,
 } from "./core/types.js";
 

@@ -4,11 +4,16 @@ import { MediaSurface } from "./media.js";
 import { diagnosticsSnapshot, type ScopeRuntime } from "./runtime.js";
 import { ContentSurface } from "./surfaces.js";
 import type {
+  GlassAppearanceOptions,
   GlassHandle,
+  GlassMediaHandle,
+  GlassOverMediaOptions,
+  GlassOverRegionOptions,
+  GlassRegionHandle,
   GlassScope,
   GlassScopeOptions,
+  GlassSourceHandle,
   MediaSurfaceOptions,
-  SurfaceHandle,
   SurfaceOptions,
 } from "./types.js";
 
@@ -60,6 +65,34 @@ export function createGlassScope(options: GlassScopeOptions = {}): GlassScope {
   const assertLive = (): void => {
     if (runtime.destroyed) throw new Error("liquid-glass: scope is destroyed");
   };
+  const createScopedLens = (
+    element: HTMLElement,
+    lensOptions: GlassAppearanceOptions,
+    request: "page" | "region" | "media" | "wallpaper",
+    routing: Pick<import("./types.js").GlassOptions, "surfaces" | "background">,
+  ): GlassSourceHandle => {
+    assertLive();
+    return createLens(
+      element,
+      { ...runtime.defaults, ...lensOptions, ...routing },
+      runtime,
+      request,
+    ) as GlassSourceHandle;
+  };
+  const createRegion = (
+    element: HTMLElement,
+    surfaceOptions: SurfaceOptions = {},
+  ): GlassRegionHandle => {
+    assertLive();
+    return new ContentSurface(element, surfaceOptions, runtime);
+  };
+  const createMedia = (
+    media: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
+    mediaOptions: MediaSurfaceOptions = {},
+  ): GlassMediaHandle => {
+    assertLive();
+    return new MediaSurface(media, mediaOptions, runtime);
+  };
   return {
     glass(element, lensOptions = {}): GlassHandle {
       assertLive();
@@ -69,16 +102,56 @@ export function createGlassScope(options: GlassScopeOptions = {}): GlassScope {
         runtime,
       );
     },
-    createSurface(element, surfaceOptions: SurfaceOptions = {}): SurfaceHandle {
-      assertLive();
-      return new ContentSurface(element, surfaceOptions, runtime);
+    glassOverPage(element, lensOptions = {}) {
+      return createScopedLens(element, lensOptions, "page", {
+        surfaces: [],
+        background: "auto",
+      });
     },
-    createMediaSurface(
-      media,
-      mediaOptions: MediaSurfaceOptions = {},
-    ): SurfaceHandle {
-      assertLive();
-      return new MediaSurface(media, mediaOptions, runtime);
+    glassOverRegion(
+      element,
+      options: GlassOverRegionOptions = {},
+    ): GlassHandle {
+      const { region, ...lensOptions } = options;
+      const surfaces = region
+        ? Array.isArray(region)
+          ? [...region]
+          : [region]
+        : "auto";
+      return createScopedLens(element, lensOptions, "region", {
+        surfaces,
+        background: false,
+      });
+    },
+    glassOverMedia(element, options: GlassOverMediaOptions = {}): GlassHandle {
+      const { media, ...lensOptions } = options;
+      const surfaces = media
+        ? Array.isArray(media)
+          ? [...media]
+          : [media]
+        : "auto";
+      return createScopedLens(element, lensOptions, "media", {
+        surfaces,
+        background: false,
+      });
+    },
+    glassOverWallpaper(element, wallpaper, lensOptions = {}) {
+      return createScopedLens(element, lensOptions, "wallpaper", {
+        surfaces: [],
+        background: wallpaper,
+      });
+    },
+    createGlassRegion(element, surfaceOptions = {}) {
+      return createRegion(element, surfaceOptions);
+    },
+    createGlassMedia(media, mediaOptions = {}) {
+      return createMedia(media, mediaOptions);
+    },
+    createSurface(element, surfaceOptions = {}) {
+      return createRegion(element, surfaceOptions);
+    },
+    createMediaSurface(media, mediaOptions = {}) {
+      return createMedia(media, mediaOptions);
     },
     setBackground(background): void {
       assertLive();

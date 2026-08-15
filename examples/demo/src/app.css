@@ -306,7 +306,7 @@ a {
   padding: 24px 0;
 }
 
-/* ── 2. Three kinds of glass ───────────────────────────────────────────────── */
+/* ── 2. Four explicit glass interfaces ────────────────────────────────────── */
 /* Per-pane stage height, tuned per breakpoint so the demos never float in a
    sea of dead space. Referenced by every stage element below. */
 :root {
@@ -314,10 +314,10 @@ a {
 }
 .examples-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
 }
-/* Full-width code block sits below the three-pane grid. */
+/* Full-width code block sits below the four-pane grid. */
 .examples > .cb {
   margin-top: 24px;
 }

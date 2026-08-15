@@ -1,5 +1,8 @@
 # Product API v0.1 — definitive spec (surfaces × lenses)
 
+> Superseded by [Product API v0.2](product-api-v0.2.md). This file records the
+> first surface-based contract. Do not use its names for new code.
+
 **Status:** implementation contract, 2026-07-04. Successor to
 [surface-lens-redesign.md](./surface-lens-redesign.md) milestones 1–6; inherits
 every Safari rule in `ARCHITECTURE.md` ("Safari: constraints and

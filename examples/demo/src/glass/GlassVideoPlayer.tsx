@@ -4,7 +4,7 @@ import {
   SpeakerWaveIcon,
   SpeakerXMarkIcon,
 } from "@heroicons/react/20/solid";
-import { Glass, GlassMediaSurface } from "@tomagranate/liquid-glass/react";
+import { GlassMedia, GlassOverMedia } from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 export interface GlassVideoPlayerProps {
@@ -48,14 +48,12 @@ const BUBBLE_GLASS = {
 };
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
-const WAITING_SURFACES = [];
 
 /**
  * A video player whose controls are liquid glass. The `<video>` is wrapped in a
- * `<GlassMediaSurface live>` — an SVG filter can't sample a playing video, so
- * the surface uses the WebGL texture backend. Each control is a plain `<Glass>`
- * lens positioned over the video; they overlap the media surface and refract it
- * live. Icons ride on top in the DOM and stay clickable.
+ * `<GlassMedia live>` — an SVG filter can't sample a playing video, so the
+ * media source uses WebGL. Each `<GlassOverMedia>` control states that
+ * relationship directly. Icons stay in the DOM and remain clickable.
  */
 export function GlassVideoPlayer({
   src = "/coast.mp4",
@@ -185,7 +183,7 @@ export function GlassVideoPlayer({
   };
 
   return (
-    <GlassMediaSurface
+    <GlassMedia
       live
       className="glassx glassx-video"
       style={{
@@ -210,14 +208,12 @@ export function GlassVideoPlayer({
 
       {/* Interactive glass controls, positioned over the live video. */}
       {!hasStarted && (
-        <Glass
+        <GlassOverMedia
           as="button"
           type="button"
           className="glassx-video-ctl glassx-video-bigplay"
           data-waiting={!mediaReady}
           {...BUBBLE_GLASS}
-          surfaces={mediaReady ? "auto" : WAITING_SURFACES}
-          background={false}
           tint={mediaReady ? BUBBLE_GLASS.tint : waitingTint}
           style={{
             left: layout.bubble.x,
@@ -229,15 +225,13 @@ export function GlassVideoPlayer({
           aria-label="Play"
         >
           <PlayIcon className="glassx-ctl-icon xl" />
-        </Glass>
+        </GlassOverMedia>
       )}
 
-      <Glass
+      <GlassOverMedia
         className="glassx-video-scrub"
         data-waiting={!mediaReady}
         {...SCRUB_GLASS}
-        surfaces={mediaReady ? "auto" : WAITING_SURFACES}
-        background={false}
         tint={mediaReady ? SCRUB_GLASS.tint : waitingTint}
         style={{
           left: layout.scrub.x,
@@ -258,16 +252,14 @@ export function GlassVideoPlayer({
           className="glassx-video-scrub-fill"
           style={{ width: `${progress * 100}%` }}
         />
-      </Glass>
+      </GlassOverMedia>
 
-      <Glass
+      <GlassOverMedia
         as="button"
         type="button"
         className="glassx-video-ctl"
         data-waiting={!mediaReady}
         {...BAR_GLASS}
-        surfaces={mediaReady ? "auto" : WAITING_SURFACES}
-        background={false}
         tint={mediaReady ? BAR_GLASS.tint : waitingTint}
         style={{
           left: layout.vol.x,
@@ -283,8 +275,8 @@ export function GlassVideoPlayer({
         ) : (
           <SpeakerWaveIcon className="glassx-ctl-icon" />
         )}
-      </Glass>
-    </GlassMediaSurface>
+      </GlassOverMedia>
+    </GlassMedia>
   );
 }
 

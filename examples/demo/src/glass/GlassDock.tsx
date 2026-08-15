@@ -9,7 +9,7 @@ import {
   MapPinIcon,
   MusicalNoteIcon,
 } from "@heroicons/react/24/solid";
-import { Glass } from "@tomagranate/liquid-glass/react";
+import { GlassOverPage } from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 interface DockApp {
@@ -89,7 +89,11 @@ const DOCK_GLASS = {
 export function GlassDock() {
   return (
     <div className="glassx-dock">
-      <Glass className="glassx-dock-slab" {...DOCK_GLASS} aria-hidden="true" />
+      <GlassOverPage
+        className="glassx-dock-slab"
+        {...DOCK_GLASS}
+        aria-hidden="true"
+      />
       <div className="glassx-dock-row">
         {APPS.map(({ id, label, gradient, Icon }) => (
           <button

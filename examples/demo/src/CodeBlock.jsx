@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { CheckIcon, ClipboardIcon } from "@heroicons/react/16/solid";
-import { Glass } from "@tomagranate/liquid-glass/react";
+import { GlassOverPage } from "@tomagranate/liquid-glass/react";
 import "./CodeBlock.css";
 
 /* ── Tiny hand-rolled JS/JSX tokenizer ───────────────────────────────────────
@@ -120,8 +120,7 @@ const CODE_GLASS = {
 /**
  * A glass-panelled code sample. Accepts either a single `code`/`lang`, or a
  * `tabs` array of `{ label, lang, code }` (e.g. "React" / "Vanilla"). The panel
- * itself is a heavily-tinted {@link Glass} so it refracts the page behind it
- * while staying legible. Syntax highlighting is the local regex tokenizer.
+ * itself uses page glass. Syntax highlighting is the local regex tokenizer.
  */
 export function CodeBlock({ code, lang = "jsx", tabs, collapsed = true }) {
   const items = tabs ?? [{ label: lang.toUpperCase(), lang, code }];
@@ -138,7 +137,7 @@ export function CodeBlock({ code, lang = "jsx", tabs, collapsed = true }) {
   };
 
   return (
-    <Glass className="cb" data-open={open} {...CODE_GLASS}>
+    <GlassOverPage className="cb" data-open={open} {...CODE_GLASS}>
       <div className="cb-head">
         <button
           type="button"
@@ -190,7 +189,7 @@ export function CodeBlock({ code, lang = "jsx", tabs, collapsed = true }) {
       <pre className="cb-pre" id={regionId} hidden={!open}>
         <Highlighted code={current.code} />
       </pre>
-    </Glass>
+    </GlassOverPage>
   );
 }
 

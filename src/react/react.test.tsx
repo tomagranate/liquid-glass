@@ -12,11 +12,19 @@ import {
 } from "vitest";
 import {
   Glass,
+  GlassMedia,
   GlassMediaSurface,
+  GlassOverMedia,
+  GlassOverPage,
+  GlassOverRegion,
+  GlassOverWallpaper,
+  GlassRegion,
   GlassRoot,
   GlassSurface,
   useGlass,
   useGlassDiagnostics,
+  useGlassMedia,
+  useGlassRegion,
   useMediaSurface,
   useSurface,
 } from "./index.js";
@@ -25,6 +33,10 @@ import {
    records the element/options it was called with and returns a spied handle. */
 const lens = vi.hoisted(() => ({
   create: vi.fn(),
+  page: vi.fn(),
+  region: vi.fn(),
+  media: vi.fn(),
+  wallpaper: vi.fn(),
   update: vi.fn(),
   geometryChanged: vi.fn(),
   refresh: vi.fn(),
@@ -42,6 +54,12 @@ const media = vi.hoisted(() => ({
 }));
 const scoped = vi.hoisted(() => ({
   glass: vi.fn(),
+  glassOverPage: vi.fn(),
+  glassOverRegion: vi.fn(),
+  glassOverMedia: vi.fn(),
+  glassOverWallpaper: vi.fn(),
+  createGlassRegion: vi.fn(),
+  createGlassMedia: vi.fn(),
   createSurface: vi.fn(),
   createMediaSurface: vi.fn(),
   setBackground: vi.fn(),
@@ -51,6 +69,12 @@ const scoped = vi.hoisted(() => ({
 
 vi.mock("../core/api.js", () => ({
   glass: lens.create,
+  glassOverPage: lens.page,
+  glassOverRegion: lens.region,
+  glassOverMedia: lens.media,
+  glassOverWallpaper: lens.wallpaper,
+  createGlassRegion: surface.create,
+  createGlassMedia: media.create,
   createSurface: surface.create,
   createMediaSurface: media.create,
 }));
@@ -113,19 +137,29 @@ describe("react bindings", () => {
       },
       policy: [],
     });
-    lens.create.mockImplementation(() => ({
-      update: lens.update,
-      geometryChanged: lens.geometryChanged,
-      refresh: lens.refresh,
-      destroy: lens.destroy,
-    }));
-    scoped.glass.mockImplementation(() => ({
+    const lensHandle = () => ({
       update: lens.update,
       geometryChanged: lens.geometryChanged,
       refresh: lens.refresh,
       destroy: lens.destroy,
       backends: [],
-    }));
+    });
+    for (const create of [
+      lens.create,
+      lens.page,
+      lens.region,
+      lens.media,
+      lens.wallpaper,
+      scoped.glass,
+      scoped.glassOverPage,
+      scoped.glassOverRegion,
+      scoped.glassOverMedia,
+      scoped.glassOverWallpaper,
+    ]) {
+      create.mockImplementation(lensHandle);
+    }
+    scoped.createGlassRegion.mockImplementation(surface.create);
+    scoped.createGlassMedia.mockImplementation(media.create);
     surface.create.mockImplementation((element: HTMLElement) => ({
       element,
       refresh: surface.refresh,
@@ -279,6 +313,50 @@ describe("react bindings", () => {
     expect(lens.destroy).toHaveBeenCalledTimes(1);
   });
 
+  it("routes each explicit glass component through its named interface", () => {
+    const region = {
+      sourceType: "region" as const,
+      element: document.createElement("div"),
+      refresh: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const mediaHandle = {
+      sourceType: "media" as const,
+      element: document.createElement("video"),
+      refresh: vi.fn(),
+      destroy: vi.fn(),
+    };
+
+    render(<GlassOverPage radius={10}>page</GlassOverPage>);
+    expect(lens.page).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ radius: 10 }),
+    );
+
+    render(<GlassOverRegion region={region}>region</GlassOverRegion>);
+    expect(lens.region).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ region }),
+    );
+
+    render(<GlassOverMedia media={mediaHandle}>media</GlassOverMedia>);
+    expect(lens.media).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ media: mediaHandle }),
+    );
+
+    render(
+      <GlassOverWallpaper wallpaper="linear-gradient(red, blue)">
+        wallpaper
+      </GlassOverWallpaper>,
+    );
+    expect(lens.wallpaper).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      "linear-gradient(red, blue)",
+      expect.any(Object),
+    );
+  });
+
   /* ── <GlassSurface> ── */
 
   it("<GlassSurface> registers the host and destroys it on unmount", () => {
@@ -297,6 +375,11 @@ describe("react bindings", () => {
 
     unmount();
     expect(surface.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the old region and media component names as aliases", () => {
+    expect(GlassSurface).toBe(GlassRegion);
+    expect(GlassMediaSurface).toBe(GlassMedia);
   });
 
   /* ── <GlassMediaSurface> ── */
@@ -374,6 +457,20 @@ describe("react bindings", () => {
     expect(surface.destroy).toHaveBeenCalledTimes(1);
   });
 
+  it("useGlassRegion creates/destroys a typed region handle", () => {
+    const ref = createRef<HTMLDivElement>();
+    let handle: unknown = "unset";
+    function Host() {
+      handle = useGlassRegion(ref);
+      return <div ref={ref} />;
+    }
+    render(<Host />);
+    expect(surface.create).toHaveBeenCalledTimes(1);
+    expect(handle).not.toBeNull();
+    unmount();
+    expect(surface.destroy).toHaveBeenCalledTimes(1);
+  });
+
   it("useMediaSurface creates/destroys a media handle", () => {
     const ref = createRef<HTMLVideoElement>();
     let handle: unknown = "unset";
@@ -386,6 +483,20 @@ describe("react bindings", () => {
     expect(media.create.mock.calls[0][1]).toEqual({ live: true });
     expect(handle).not.toBeNull();
 
+    unmount();
+    expect(media.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("useGlassMedia creates/destroys a typed media handle", () => {
+    const ref = createRef<HTMLVideoElement>();
+    let handle: unknown = "unset";
+    function Host() {
+      handle = useGlassMedia(ref, { live: true });
+      return <video ref={ref} />;
+    }
+    render(<Host />);
+    expect(media.create).toHaveBeenCalledTimes(1);
+    expect(handle).not.toBeNull();
     unmount();
     expect(media.destroy).toHaveBeenCalledTimes(1);
   });

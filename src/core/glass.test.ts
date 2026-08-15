@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetBackground, setBackground } from "./background.js";
+import { __resetBackground } from "./background.js";
 import { glass, unionCovers } from "./glass.js";
 import { generateDisplacementMap, generateSpecularHighlight } from "./map.js";
 import { createMediaSurface, type MediaSurface } from "./media.js";
 import { createGlassScope } from "./scope.js";
 import { type ContentSurface, createSurface } from "./surfaces.js";
+import type { GlassOptions } from "./types.js";
 
 // jsdom has no canvas rasteriser; stand in a deterministic map generator that
 // encodes the inputs we care about (dimensions + per-lens amplitude), and a
@@ -97,6 +98,58 @@ describe("glass routing", () => {
     __resetBackground();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("exposes clear region and media handle types", () => {
+    const scope = createGlassScope();
+    cleanups.push(() => scope.destroy());
+    const regionEl = addEl();
+    const mediaEl = addEl("canvas") as HTMLCanvasElement;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(scope.createGlassRegion(regionEl).sourceType).toBe("region");
+    expect(scope.createGlassMedia(mediaEl).sourceType).toBe("media");
+    warn.mockRestore();
+  });
+
+  it("keeps page, region, and wallpaper requests in their named source family", () => {
+    const scope = createGlassScope();
+    cleanups.push(() => scope.destroy());
+    const regionEl = addEl("main");
+    setRect(regionEl, { left: 0, top: 0, width: 400, height: 300 });
+    const region = scope.createGlassRegion(regionEl);
+
+    const pageEl = addEl();
+    const regionLensEl = addEl();
+    const wallpaperEl = addEl();
+    for (const element of [pageEl, regionLensEl, wallpaperEl]) {
+      setRect(element, { left: 20, top: 30, width: 120, height: 50 });
+    }
+
+    const page = scope.glassOverPage(pageEl, { chroma: 0 });
+    const regionLens = scope.glassOverRegion(regionLensEl, {
+      region,
+      chroma: 0,
+    });
+    const wallpaper = scope.glassOverWallpaper(
+      wallpaperEl,
+      "linear-gradient(red, blue)",
+      { chroma: 0 },
+    );
+
+    expect(page.backends).toEqual(["native"]);
+    expect(regionLens.backends).toContain("content-svg");
+    expect(regionLens.backends).not.toContain("background-copy");
+    expect(wallpaper.backends).toEqual(["background-copy"]);
+
+    // JavaScript callers cannot change a named handle through legacy keys.
+    page.update({ background: "red" } as GlassOptions);
+    regionLens.update({ surfaces: [] } as GlassOptions);
+    wallpaper.update({ background: false } as GlassOptions);
+    expect(page.backends).toEqual(["native"]);
+    expect(regionLens.backends).toContain("content-svg");
+    expect(wallpaper.backends).toEqual(["background-copy"]);
   });
 
   it("registers a sub-lens in an overlapping content surface and moves it via two attribute writes", () => {
@@ -408,7 +461,7 @@ describe("glass routing", () => {
     expect(surfaceEl.style.filter).toContain("url(");
   });
 
-  it("hides .lg-bg under full surface cover and paints it (sized lens + margin) when uncovered", () => {
+  it("paints an explicit wallpaper outside full region cover", () => {
     const surfaceEl = addEl();
     setRect(surfaceEl, { left: 0, top: 0, width: 400, height: 300 });
     const surface = createSurface(surfaceEl);
@@ -422,13 +475,18 @@ describe("glass routing", () => {
       height: 60,
     });
     // scale 10 / blur 0 / chroma 0 → sampling margin = 10.
-    const handle = glass(lensEl, { scale: 10, blur: 0, chroma: 0 });
+    const handle = glass(lensEl, {
+      scale: 10,
+      blur: 0,
+      chroma: 0,
+      background: "rgb(20, 30, 40)",
+    });
     cleanups.push(() => handle.destroy());
 
     // Fully covered → the background copy is never shown.
     expect(lensEl.querySelector(":scope > .lg-bg")).toBeNull();
 
-    // Straddle the surface edge → partial cover → paint the copy.
+    // Straddle the region edge. The explicit wallpaper fills the gap.
     lensBox.left = 350;
     handle.geometryChanged();
     const bg = lensEl.querySelector<HTMLElement>(":scope > .lg-bg");
@@ -484,12 +542,14 @@ describe("glass routing", () => {
     expect(bg?.style.background).toContain("rgb(200, 100, 0)");
   });
 
-  it("setBackground propagates to a mounted lens .lg-bg", () => {
+  it("scope.setBackground enables known wallpaper for automatic glass", () => {
+    const scope = createGlassScope();
+    cleanups.push(() => scope.destroy());
     const lensEl = addEl();
     setRect(lensEl, { left: 10, top: 10, width: 100, height: 50 });
-    const handle = glass(lensEl);
+    const handle = scope.glass(lensEl);
     cleanups.push(() => handle.destroy());
-    setBackground("rgb(5, 6, 7)");
+    scope.setBackground("rgb(5, 6, 7)");
     const bg = lensEl.querySelector<HTMLElement>(":scope > .lg-bg");
     expect(bg?.style.background).toContain("rgb(5, 6, 7)");
   });
@@ -546,7 +606,7 @@ describe("glass routing", () => {
 
     const lensEl = addEl();
     setRect(lensEl, { left: 500, top: 10, width: 80, height: 40 });
-    const handle = glass(lensEl); // off-surface → paints .lg-bg
+    const handle = glass(lensEl); // off-region → native fallback
     cleanups.push(() => handle.destroy());
 
     expect(surfaceEl.classList.contains("lg-composited")).toBe(false);

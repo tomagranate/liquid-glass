@@ -609,7 +609,7 @@ async function assertInteractions() {
     !initialVideo.poster ||
     initialVideo.controlBackgroundAlpha < 0.2 ||
     initialVideo.controlBackgroundAlpha > 0.65 ||
-    initialVideo.controlBackend !== "none" ||
+    !["media-webgl", "none"].includes(initialVideo.controlBackend) ||
     !initialVideo.controlWaiting ||
     (initialVideo.controlBackdropFilter &&
       initialVideo.controlBackdropFilter !== "none") ||

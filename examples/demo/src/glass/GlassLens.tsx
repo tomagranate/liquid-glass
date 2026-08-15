@@ -1,18 +1,18 @@
 import { type HTMLAttributes, useRef, useState } from "react";
-import type { GlassOptions } from "@tomagranate/liquid-glass";
-import { useGlass } from "@tomagranate/liquid-glass/react";
+import type { GlassAppearanceOptions } from "@tomagranate/liquid-glass";
+import { useGlassOverPage } from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 export interface GlassLensProps extends HTMLAttributes<HTMLDivElement> {
   /** Diameter, px. */
   size?: number;
   /** Per-instance glass material overrides. */
-  glass?: GlassOptions;
+  glass?: GlassAppearanceOptions;
   /** Hint label shown until the first drag. */
   hint?: string;
 }
 
-const LENS_GLASS: GlassOptions = {
+const LENS_GLASS: GlassAppearanceOptions = {
   radius: "50%",
   depth: 36,
   scale: 130,
@@ -25,11 +25,8 @@ const LENS_GLASS: GlassOptions = {
 };
 
 /**
- * A free-floating circular lens you can drag anywhere. It lives in the overlay
- * layer (a sibling of the page surface), so `surfaces: "auto"` registers it
- * against every surface it passes over and it refracts the live page in place.
- * The drag handler nudges `geometryChanged()` per pointer move, so the
- * refraction stays locked to the pointer without any per-frame tracking.
+ * A free-floating page lens. The drag handler calls `geometryChanged()` after
+ * each pointer move.
  */
 export function GlassLens({
   size = 200,
@@ -40,7 +37,7 @@ export function GlassLens({
   ...rest
 }: GlassLensProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const handle = useGlass(ref, { ...LENS_GLASS, ...glass });
+  const handle = useGlassOverPage(ref, { ...LENS_GLASS, ...glass });
   const [dragged, setDragged] = useState(false);
   const pos = useRef({ x: 0, y: 0 });
   const grab = useRef<{ id: number; dx: number; dy: number } | null>(null);

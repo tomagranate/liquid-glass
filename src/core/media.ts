@@ -14,10 +14,10 @@ import { getGeometryRect, notifyGeometry } from "./geometry.js";
 import { WebGLGlass } from "./liquid-glass-webgl.js";
 import type { ScopeRuntime } from "./runtime.js";
 import type {
+  GlassMediaHandle,
   LensSpec,
   MediaSurfaceOptions,
   ResolvedLensMaterial,
-  SurfaceHandle,
 } from "./types.js";
 import type { LensBox } from "./surfaces.js";
 
@@ -51,8 +51,9 @@ export function listMediaSurfaces(): MediaSurface[] {
   return Array.from(registry);
 }
 
-export class MediaSurface implements SurfaceHandle {
+export class MediaSurface implements GlassMediaHandle {
   readonly kind = "media" as const;
+  readonly sourceType = "media" as const;
   readonly element: HTMLElement;
   readonly runtime?: ScopeRuntime;
   destroyed = false;
@@ -317,6 +318,6 @@ export class MediaSurface implements SurfaceHandle {
 export function createMediaSurface(
   media: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
   options: MediaSurfaceOptions = {},
-): SurfaceHandle {
+): GlassMediaHandle {
   return new MediaSurface(media, options);
 }

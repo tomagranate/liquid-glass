@@ -32,9 +32,9 @@ import {
 } from "./policy.js";
 import { recordPolicy, type ScopeRuntime } from "./runtime.js";
 import type {
+  GlassRegionHandle,
   ResolvedLensMaterial,
   SubLens,
-  SurfaceHandle,
   SurfaceOptions,
 } from "./types.js";
 
@@ -125,8 +125,9 @@ export function listContentSurfaces(): ContentSurface[] {
   return Array.from(registry);
 }
 
-export class ContentSurface implements SurfaceHandle {
+export class ContentSurface implements GlassRegionHandle {
   readonly kind = "content" as const;
+  readonly sourceType = "region" as const;
   readonly element: HTMLElement;
   readonly runtime?: ScopeRuntime;
   destroyed = false;
@@ -475,6 +476,6 @@ export class ContentSurface implements SurfaceHandle {
 export function createSurface(
   element: HTMLElement,
   options: SurfaceOptions = {},
-): SurfaceHandle {
+): GlassRegionHandle {
   return new ContentSurface(element, options);
 }

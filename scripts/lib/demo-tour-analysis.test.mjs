@@ -95,6 +95,7 @@ test("rejects absent, substituted, and unknown browser backends", () => {
 
 test("accepts the documented media fallback without WebGL2", () => {
   const snapshot = validSnapshot("firefox");
+  snapshot.backends["video-media"] = ["none"];
   snapshot.backends["canvas-media"] = ["none", "background-copy"];
   assert.deepEqual(
     validateDemoSnapshot(snapshot, "firefox", DEMO_CASES, {
