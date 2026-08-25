@@ -1,11 +1,10 @@
-/* Glass components built on the SVG `feDisplacementMap` engine.
+/* Glass demo components built on the v0.1 surfaces × lenses API.
 
-   Each component renders the core's layer structure — `.lq` (host) →
-   `.lq-refraction` > `.lq-backdrop`, `.lq-sheen`, `.lq-content` — and drives it
-   with the `useGlass` hook. The *material* (refraction filter, tint, rim light,
-   shadow) is applied by the core via inline styles and `filter: url(#glass)`;
-   the rules below add component layout plus the colored "backdrop copies" that
-   the moving thumbs/indicators refract (refraction-target mode). */
+   Every component is a `<Glass>` lens (class `.lg`, added by the core) or a
+   marked track (`.lgs-surface`). The core owns the refraction
+   (`.lg-bg`), sheen (`.lg-sheen`), tint, rim light and shadow via inline styles;
+   the rules below only add component *layout* and the crisp content that rides
+   on top of the glass. */
 
 .glassx {
   --fg: rgba(255, 255, 255, 0.96);
@@ -33,54 +32,17 @@
   outline-offset: 3px;
 }
 
-/* ── Panel ───────────────────────────────────────────────────────────────── */
-.glassx.lq > .lq-content {
+/* The content layer inside a panel (rides above the refraction; the core gives
+   direct `.lg` children z-index above `.lg-bg`/`.lg-sheen`). */
+.glassx-content {
   height: auto;
-}
-
-/* ── Refraction copies (`GlassCopyContext`) ──────────────────────────────────
-   Flat look-alikes rendered inside another surface's backdrop: identical
-   dimensions, no filters/controllers/media. They only exist to be refracted. */
-
-/* Viewport-glued wallpaper slice under a page-content copy. Oversized so the
-   filter's sampling reach never reads past it at the copy's page-top edge. */
-.copy-wallpaper {
-  position: absolute;
-  top: -160px;
-  left: -160px;
-  width: calc(100vw + 320px);
-  height: calc(100vh + 320px);
-  background-image: var(--lq-backdrop);
-  background-size: var(--lq-cover-width, 100vw) var(--lq-cover-height, 100vh);
-  background-position: calc(160px + var(--lq-cover-x, 0px))
-    calc(160px + var(--lq-cover-y, 0px));
-  background-repeat: no-repeat;
-}
-
-/* Approximation of the glass material as a plain fill. */
-.glassx-flat {
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
-}
-.glassx-flat.glassx-button[data-variant="primary"] {
-  background: rgba(255, 255, 255, 0.28);
-}
-.glassx-flat.glassx-button[data-variant="ghost"] {
-  background: rgba(255, 255, 255, 0.05);
-}
-.glassx-flat-thumb {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-}
-.glassx-flat-toggle .glassx-toggle-item[data-active="true"] {
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
 }
 
 /* ── Button ──────────────────────────────────────────────────────────────── */
 .glassx-button {
-  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   appearance: none;
   border: 0;
   border-radius: 999px;
@@ -91,11 +53,12 @@
   cursor: pointer;
   transition: transform 0.15s ease;
 }
-.glassx-button .lq-content {
+.glassx-button-label {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 0.5em;
-  height: auto;
+  white-space: nowrap;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 .glassx-button .glassx-btn-icon {
@@ -119,12 +82,10 @@
 .glassx-lens:active {
   cursor: grabbing;
 }
-.glassx.lq > .lq-content.glassx-lens-hint {
-  height: 100%;
-}
-.glassx-lens .glassx-lens-hint {
+.glassx-lens-hint {
   display: grid;
   place-items: center;
+  width: 100%;
   height: 100%;
   font-size: 13px;
   font-weight: 550;
@@ -133,16 +94,26 @@
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
   transition: opacity 0.6s ease;
 }
-.glassx-lens .glassx-lens-hint[data-dragged="true"] {
+.glassx-lens-hint[data-dragged="true"] {
   opacity: 0;
 }
 
 /* ── Dock ────────────────────────────────────────────────────────────────── */
 .glassx-dock {
-  display: inline-block;
+  position: relative;
+  display: inline-grid;
+  overflow: visible;
   border-radius: 32px;
 }
+.glassx-dock-slab {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
 .glassx-dock-row {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-end;
   gap: 14px;
@@ -158,7 +129,7 @@
   transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .glassx-dock-app:hover {
-  transform: translateY(-10px) scale(1.16);
+  transform: translateY(-16px) scale(1.16);
 }
 .glassx-dock-app:active {
   transform: translateY(-6px) scale(1.05);
@@ -201,63 +172,23 @@
 /* ── Toggle group ────────────────────────────────────────────────────────── */
 .glassx-toggle {
   position: relative;
+  display: inline-block;
+}
+/* The row of labels IS the content surface: the pill lens bends the label under
+   it in place. */
+.glassx-toggle-track {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 5px;
   border-radius: 999px;
-  /* No fill: the static glass surface below shows the page through the row, and
-     the lens refracts it under the selection. */
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.14);
 }
-/* Hidden holder for the generated <filter>. */
-.glassx-toggle-defs {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-/* The static refracted surface: fills the row, painted once, never moved. It's
-   purely decorative — never take pointer events, so clicks reach the buttons
-   without routing through the filtered layer (which adds input latency on
-   Safari). */
-.glassx-toggle-surface.lq {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: 999px;
-  pointer-events: none;
-}
-.glassx-toggle-surface .lq-backdrop {
-  /* A copy of the page background, aligned by the component so it reads as the
-     real page showing through the row. `background-image` (not the shorthand)
-     keeps the `cover`/`no-repeat` sizing from `.lq-backdrop` so it registers
-     with the body's viewport-`cover` background. */
-  background-image: var(--lq-backdrop);
-}
-/* The visible selection chrome (tint + rim light + shadow). Moved by a GPU
-   transform; the refraction lens trails it. */
-.glassx-toggle-pill {
-  position: absolute;
-  left: 0;
-  z-index: 1;
-  pointer-events: none;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
-  box-shadow:
-    inset 0 1px 1.5px rgba(255, 255, 255, 0.9),
-    inset 0 -1.5px 2px rgba(0, 0, 0, 0.25),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.25),
-    0 2px 10px rgba(0, 0, 0, 0.28);
-  transition: transform 0.34s cubic-bezier(0.34, 1.4, 0.5, 1);
-}
 .glassx-toggle-item {
   position: relative;
-  z-index: 2;
   appearance: none;
-  /* Equal width so the moving pill keeps a constant size (no filter rebuild). */
+  /* Equal width so the moving pill keeps a constant size. */
   width: 76px;
   background: transparent;
   border: 0;
@@ -281,6 +212,17 @@
 .glassx-toggle-item[data-active="true"] {
   opacity: 1;
 }
+/* The glass selection indicator — a live lens sliding over the label row. */
+.glassx-toggle-pill {
+  position: absolute;
+  top: 5px;
+  left: 0;
+  height: calc(100% - 10px);
+  pointer-events: none;
+  transition:
+    transform 0.34s cubic-bezier(0.34, 1.4, 0.5, 1),
+    width 0.34s cubic-bezier(0.34, 1.4, 0.5, 1);
+}
 
 /* ── Switch ──────────────────────────────────────────────────────────────── */
 .glassx-switch {
@@ -302,12 +244,13 @@
 .glassx-switch[data-on="true"] .glassx-switch-track {
   background: linear-gradient(180deg, #5fd08a, #36b06a);
 }
-.glassx-switch-thumb.lq {
+.glassx-switch-thumb {
   position: absolute;
   top: 3px;
   left: 3px;
   width: 26px;
   height: 26px;
+  border-radius: 999px;
   transition: transform 0.28s cubic-bezier(0.34, 1.4, 0.5, 1);
 }
 .glassx-switch[data-on="true"] .glassx-switch-thumb {
@@ -341,21 +284,17 @@
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.95);
 }
-.glassx-slider-thumb.lq {
+.glassx-slider-thumb {
   position: absolute;
   top: 50%;
   width: 30px;
   height: 30px;
+  border-radius: 999px;
   transform: translate(-50%, -50%);
   cursor: grab;
 }
-.glassx-slider-thumb.lq:active {
+.glassx-slider-thumb:active {
   cursor: grabbing;
-}
-/* The squished bar riding over the wallpaper inside the thumb's backdrop. */
-.glassx-thumb-bar {
-  position: absolute;
-  inset: 0;
 }
 /* Small variant (music widget). */
 .glassx-slider.sm {
@@ -364,25 +303,12 @@
 .glassx-slider.sm .glassx-slider-track {
   height: 7px;
 }
-.glassx-slider.sm .glassx-slider-thumb.lq {
+.glassx-slider.sm .glassx-slider-thumb {
   width: 22px;
   height: 22px;
 }
 
-/* ── Rain (animated clone-mode droplets) ─────────────────────────────────── */
-.glassx-rain {
-  position: relative;
-  width: 100%;
-  height: 420px;
-  overflow: hidden;
-}
-.glassx-raindrop {
-  position: absolute;
-  top: 0;
-  border-radius: 50%;
-}
-
-/* ── Shockwave (WebGL texture backend; cursor-fed ripple field) ─────────── */
+/* ── Shockwave (raw WebGL2 shader; low-level showcase) ────────────────────── */
 .glassx-shockwave {
   position: relative;
   width: 100%;
@@ -456,23 +382,20 @@
   z-index: 1;
   pointer-events: none;
 }
-.glassx-shockwave-flat {
-  cursor: default;
-}
 .glassx-shockwave[data-webgl="false"] .glassx-shockwave-glass {
   display: none;
 }
 
-/* ── Video player (WebGL texture backend; glass controls over live video) ── */
+/* ── Video player (GlassMedia + glass controls over live video) ───────────── */
 .glassx-video {
   position: relative;
   max-width: 100%;
-  border-radius: 22px;
+  border-radius: 18px;
   overflow: hidden;
   background-color: #000;
-  background-size: cover;
-  background-position: center;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.38);
+  outline: 1px solid rgba(255, 255, 255, 0.16);
+  outline-offset: -1px;
 }
 .glassx-video-el {
   position: absolute;
@@ -483,24 +406,17 @@
   display: block;
   cursor: pointer;
 }
-.glassx-video-glass {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-/* Controls ride above the glass canvas; their lenses (drawn on the canvas)
-   refract the video beneath. */
+/* Controls are media-glass lenses positioned over the video; the media source's
+   WebGL pass refracts the frame beneath each one. */
 .glassx-video-ctl {
   position: absolute;
   display: grid;
   place-items: center;
   appearance: none;
   border: 0;
-  background: transparent;
   color: #fff;
   line-height: 1;
   cursor: pointer;
-  border-radius: 999px;
 }
 .glassx-ctl-icon {
   width: 20px;
@@ -513,28 +429,20 @@
   width: 34px;
   height: 34px;
 }
-/* The big center play bubble: pops away while the video is playing. */
-.glassx-video-bigplay {
-  transition:
-    opacity 0.25s ease,
-    transform 0.25s ease;
-}
-.glassx-video-bigplay[data-hidden="true"] {
-  opacity: 0;
-  transform: scale(0.7);
-  pointer-events: none;
-}
+/* The big center play bubble is unmounted after first playback starts. */
 .glassx-video-scrub {
   position: absolute;
   display: flex;
   align-items: center;
   cursor: pointer;
-  border-radius: 999px;
-  overflow: hidden;
+  outline: 1px solid rgba(255, 255, 255, 0.24);
+  outline-offset: -1px;
 }
 .glassx-video-scrub-fill {
   height: 100%;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
+  min-width: 8px;
+  background: linear-gradient(90deg, #9ff9e3, #fff);
+  box-shadow: 0 0 12px rgba(100, 255, 220, 0.5);
   pointer-events: none;
 }

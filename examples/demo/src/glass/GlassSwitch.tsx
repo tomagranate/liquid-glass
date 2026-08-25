@@ -1,8 +1,9 @@
-import { type HTMLAttributes, useCallback, useContext, useRef } from "react";
-import type { GlassOptions } from "@tomagranate/liquid-glass";
-import { useGlass } from "@tomagranate/liquid-glass";
-import { GlassCopyContext } from "./flat.ts";
-import { useCopyWallpaper } from "./useCopyWallpaper.ts";
+import { type HTMLAttributes, useRef } from "react";
+import type { GlassAppearanceOptions } from "@tomagranate/liquid-glass";
+import {
+  useGlassOverRegion,
+  useGlassRegion,
+} from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 export interface GlassSwitchProps
@@ -10,10 +11,10 @@ export interface GlassSwitchProps
   checked?: boolean;
   onChange?: (checked: boolean) => void;
   /** Per-instance glass material overrides for the thumb. */
-  glass?: GlassOptions;
+  glass?: GlassAppearanceOptions;
 }
 
-const THUMB_GLASS: GlassOptions = {
+const THUMB_GLASS: GlassAppearanceOptions = {
   radius: 999,
   depth: 5,
   scale: 12,
@@ -25,17 +26,13 @@ const THUMB_GLASS: GlassOptions = {
 };
 
 /**
- * A glass on/off switch. The thumb is a transparent lens aligned to the track
- * (refraction-target mode): its backdrop holds a wallpaper slice plus a copy
- * of the track pill — same class, so the on/off colors and their transition
- * come along for free — and the thumb bends both as it slides.
+ * A glass on/off switch. The track is registered as a content surface; the
+ * thumb is a glass lens sliding over it, so the track — and its on/off color
+ * transition — bends in place under the thumb as it moves. The thumb slides
+ * with a CSS transition, which the engine tracks automatically — no
+ * `track: "live"` and no duplicate markup.
  */
-export function GlassSwitch(props: GlassSwitchProps) {
-  const flat = useContext(GlassCopyContext);
-  return flat ? <FlatSwitch {...props} /> : <SwitchImpl {...props} />;
-}
-
-function SwitchImpl({
+export function GlassSwitch({
   checked = false,
   onChange,
   glass,
@@ -43,9 +40,9 @@ function SwitchImpl({
   ...rest
 }: GlassSwitchProps) {
   const trackRef = useRef<HTMLSpanElement>(null);
-  const alignToTrack = useCallback(() => trackRef.current, []);
-  const g = useGlass({ ...THUMB_GLASS, ...glass, alignTo: alignToTrack });
-  const wallpaperRef = useCopyWallpaper(alignToTrack);
+  const thumbRef = useRef<HTMLDivElement>(null);
+  useGlassRegion(trackRef);
+  useGlassOverRegion(thumbRef, { ...THUMB_GLASS, ...glass });
 
   return (
     <div
@@ -64,36 +61,7 @@ function SwitchImpl({
       {...rest}
     >
       <span ref={trackRef} className="glassx-switch-track" />
-      <div ref={g.hostRef} className="glassx-switch-thumb lq">
-        <div ref={g.refractionRef} className="lq-refraction">
-          <div ref={g.backdropRef} className="lq-backdrop">
-            <div ref={wallpaperRef} className="copy-wallpaper" />
-            {/* Same class as the real track: inherits the on/off background
-                (via the ancestor's data-on) and its color transition. */}
-            <span className="glassx-switch-track" />
-          </div>
-        </div>
-        <div ref={g.sheenRef} className="lq-sheen" />
-      </div>
-    </div>
-  );
-}
-
-function FlatSwitch({
-  checked = false,
-  onChange: _onChange,
-  glass: _glass,
-  className = "",
-  ...rest
-}: GlassSwitchProps) {
-  return (
-    <div
-      className={`glassx glassx-switch ${className}`}
-      data-on={checked}
-      {...rest}
-    >
-      <span className="glassx-switch-track" />
-      <div className="glassx-switch-thumb lq glassx-flat-thumb" />
+      <div ref={thumbRef} className="glassx-switch-thumb" />
     </div>
   );
 }

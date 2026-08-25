@@ -1,15 +1,15 @@
 import {
   type HTMLAttributes,
   useCallback,
-  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
-  useState,
 } from "react";
-import type { GlassOptions } from "@tomagranate/liquid-glass";
-import { useGlass } from "@tomagranate/liquid-glass";
-import { GlassCopyContext } from "./flat.ts";
+import type { GlassAppearanceOptions } from "@tomagranate/liquid-glass";
+import {
+  useGlassOverRegion,
+  useGlassRegion,
+} from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 export interface GlassSliderProps
@@ -20,10 +20,10 @@ export interface GlassSliderProps
   step?: number;
   onChange?: (value: number) => void;
   /** Per-instance glass material overrides for the thumb. */
-  glass?: GlassOptions;
+  glass?: GlassAppearanceOptions;
 }
 
-const THUMB_GLASS: GlassOptions = {
+const THUMB_GLASS: GlassAppearanceOptions = {
   radius: 999,
   depth: 6,
   scale: 15,
@@ -34,48 +34,13 @@ const THUMB_GLASS: GlassOptions = {
   shadow: "0 3px 10px rgba(0,0,0,0.32)",
 };
 
-/* Squished-bar colors: fill matches `.glassx-slider-fill`, remainder matches
-   the translucent `.glassx-slider-track` — the wallpaper shows through it. */
-const MINI_FILL = "rgba(255, 255, 255, 0.95)";
-const MINI_TRACK = "rgba(255, 255, 255, 0.18)";
-
 /**
- * A glass slider. The thumb refracts the wallpaper (clone mode) under the
- * *entire bar squished into the thumb*: a translucent hard-stop gradient whose
- * boundary sits at the current value, so the progress sweeps across the inside
- * of the lens as you drag while the page keeps showing through the unfilled
- * side. Updating the overlay is a pure CSS restyle — no filter rebuilds.
+ * A glass slider. The track (fill + rail) is a content surface; the thumb is a
+ * glass lens riding over it, so the filled bar bends in place under the thumb
+ * as it slides. The thumb jumps with the value (no CSS transition), so the
+ * value effect nudges `geometryChanged()` after each change.
  */
-export function GlassSlider(props: GlassSliderProps) {
-  const flat = useContext(GlassCopyContext);
-  return flat ? <FlatSlider {...props} /> : <SliderImpl {...props} />;
-}
-
-function FlatSlider({
-  value,
-  min = 0,
-  max = 100,
-  step: _step,
-  onChange: _onChange,
-  glass: _glass,
-  className = "",
-  ...rest
-}: GlassSliderProps) {
-  const pct = ((value - min) / (max - min)) * 100;
-  return (
-    <div className={`glassx glassx-slider ${className}`} {...rest}>
-      <div className="glassx-slider-track">
-        <div className="glassx-slider-fill" style={{ width: `${pct}%` }} />
-      </div>
-      <div
-        className="glassx-slider-thumb lq glassx-flat-thumb"
-        style={{ left: `${pct}%` }}
-      />
-    </div>
-  );
-}
-
-function SliderImpl({
+export function GlassSlider({
   value,
   min = 0,
   max = 100,
@@ -86,33 +51,20 @@ function SliderImpl({
   ...rest
 }: GlassSliderProps) {
   const trackRef = useRef<HTMLDivElement>(null);
+  const thumbRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  useGlassRegion(trackRef);
+  const handle = useGlassOverRegion(thumbRef, {
+    ...THUMB_GLASS,
+    ...glass,
+  });
+
   const pct = ((value - min) / (max - min)) * 100;
 
-  // The engine sizes the backdrop to the thumb box plus its sampling margin
-  // (`0.4 * size + scale` per side) and paints the wallpaper into it (clone
-  // mode). The squished bar rides on top as a translucent overlay, mapped so
-  // its 0..100% range spans exactly the visible thumb window, with the end
-  // colors extended through the margins so the rim never samples past it.
-  const [thumbSize, setThumbSize] = useState(30);
-  const scale = glass?.scale ?? THUMB_GLASS.scale ?? 15;
-  const margin = Math.ceil(0.4 * thumbSize + scale);
-  const boxSize = thumbSize + 2 * margin;
-  const windowStart = (margin / boxSize) * 100;
-  const windowSpan = (thumbSize / boxSize) * 100;
-  const boundary = windowStart + (windowSpan * pct) / 100;
-  const g = useGlass({ ...THUMB_GLASS, ...glass });
-
+  // The thumb repositions instantly with the value; tell the lens it moved.
   useLayoutEffect(() => {
-    const thumb = g.hostRef.current;
-    if (thumb) setThumbSize(thumb.getBoundingClientRect().width || 30);
-  }, [g.hostRef]);
-
-  // Clone mode only realigns the wallpaper on scroll/resize; the thumb also
-  // moves with the value, so realign whenever it does.
-  useLayoutEffect(() => {
-    g.controllerRef.current?._reposition(true);
-  }, [pct, g.controllerRef]);
+    handle?.geometryChanged();
+  }, [pct, handle]);
 
   const setFromX = useCallback(
     (clientX: number) => {
@@ -169,26 +121,14 @@ function SliderImpl({
         <div className="glassx-slider-fill" style={{ width: `${pct}%` }} />
       </div>
       <div
-        ref={g.hostRef}
-        className="glassx-slider-thumb lq"
+        ref={thumbRef}
+        className="glassx-slider-thumb"
         style={{ left: `${pct}%` }}
         onPointerDown={(e) => {
           e.stopPropagation();
           dragging.current = true;
         }}
-      >
-        <div ref={g.refractionRef} className="lq-refraction">
-          <div ref={g.backdropRef} className="lq-backdrop">
-            <div
-              className="glassx-thumb-bar"
-              style={{
-                background: `linear-gradient(90deg, ${MINI_FILL} 0%, ${MINI_FILL} ${boundary}%, ${MINI_TRACK} ${boundary}%, ${MINI_TRACK} 100%)`,
-              }}
-            />
-          </div>
-        </div>
-        <div ref={g.sheenRef} className="lq-sheen" />
-      </div>
+      />
     </div>
   );
 }

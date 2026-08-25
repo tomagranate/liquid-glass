@@ -1,6 +1,8 @@
 node_modules
 dist
+artifacts/
 coverage
+__screenshots__
 *.log
 .DS_Store
 examples/demo/dist

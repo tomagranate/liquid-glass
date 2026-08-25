@@ -1,11 +1,9 @@
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
-  useContext,
   useEffect,
   useRef,
 } from "react";
-import { GlassCopyContext } from "./flat.ts";
 import "./components.css";
 
 interface ShockPulse {
@@ -345,25 +343,13 @@ function drawColorField(
 }
 
 /**
- * A WebGL-backed shockwave field. The visible field canvas sits underneath; the
- * overlay canvas redraws only the refractive wavefront, so the field appears
- * unchanged except where the pulse bends and chromatically splits the pixels.
+ * A WebGL-backed shockwave field — the low-level API showcase. It drives a
+ * hand-written WebGL2 fragment shader directly (no SVG filter, no `glass()`):
+ * the visible field canvas sits underneath, and the overlay canvas redraws only
+ * the refractive wavefront, so the field looks unchanged except where the pulse
+ * bends and chromatically splits the pixels.
  */
 export function GlassShockwave() {
-  const flat = useContext(GlassCopyContext);
-  return flat ? <FlatShockwave /> : <ShockwaveImpl />;
-}
-
-function FlatShockwave() {
-  return (
-    <div
-      className="glassx glassx-shockwave glassx-shockwave-flat"
-      aria-hidden="true"
-    />
-  );
-}
-
-function ShockwaveImpl() {
   const stageRef = useRef<HTMLDivElement>(null);
   const sourceRef = useRef<HTMLCanvasElement>(null);
   const fieldRef = useRef<HTMLCanvasElement>(null);
@@ -375,6 +361,7 @@ function ShockwaveImpl() {
   const reducedMotionRef = useRef(false);
   const sourceReadyRef = useRef(false);
   const redrawSourceRef = useRef<() => void>(() => {});
+  const startLoopRef = useRef<() => void>(() => {});
 
   const enqueuePulse = (x: number, y: number, power = 1) => {
     const { width, height } = dimsRef.current;
@@ -391,6 +378,7 @@ function ShockwaveImpl() {
         power,
       },
     ];
+    startLoopRef.current();
   };
 
   useEffect(() => {
@@ -481,11 +469,21 @@ function ShockwaveImpl() {
       return active;
     };
 
+    // The loop runs only while a pulse is live. The overlay canvas sits inside
+    // the page's content surface, so a perpetual redraw would invalidate the
+    // surface's filter — and re-rasterize the whole viewport — every frame.
+    // The final frame after the last pulse renders `null`, clearing the
+    // overlay, and the loop parks until the next tap.
     const render = (now: number) => {
       if (sourceReadyRef.current) {
         renderer.render(waveForFrame(now));
       }
-      rafRef.current = requestAnimationFrame(render);
+      rafRef.current = pulsesRef.current.length
+        ? requestAnimationFrame(render)
+        : 0;
+    };
+    startLoopRef.current = () => {
+      if (!rafRef.current) rafRef.current = requestAnimationFrame(render);
     };
 
     resize();
@@ -503,7 +501,7 @@ function ShockwaveImpl() {
       passive: true,
       capture: true,
     });
-    rafRef.current = requestAnimationFrame(render);
+    startLoopRef.current();
 
     return () => {
       if (redrawRaf) cancelAnimationFrame(redrawRaf);

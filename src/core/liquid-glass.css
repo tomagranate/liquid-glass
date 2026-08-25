@@ -1,46 +1,115 @@
 /* Structural styles for the liquid-glass layers. The *material* (refraction
    filter, tint, rim light, shadow) is applied by the core via inline styles;
-   these rules just lay the layers out. */
+   these rules lay the layers out. Compositor-layer promotion is Safari-only
+   (`.lg-composited`, added by the core behind a UA gate — see the rule at the
+   bottom of this file). */
 
-.lq {
+/* ── Glass panel (lens) ─────────────────────────────────────────────────── */
+
+.lg {
   position: relative;
   overflow: hidden;
   isolation: isolate;
 }
 
-/* The layer that gets `filter: url(#glass)`. It holds the backdrop copy. */
-.lq-refraction {
+/* Bent page-background copy: ONE element carrying the painted copy and the
+   SVG filter (or a backdrop-filter: a per-lens `url()` one on the Chromium
+   backdrop tier, a native blur in the Safari degrade tier). Both refracting
+   tiers use a sampling margin: the copy tier pulls back via transform and is
+   clipped by the host; the backdrop tier uses negative left/top offsets and
+   clips its own output so its expanded backdrop input remains available. */
+.lg-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-repeat: no-repeat;
+}
+
+/* Backdrop tier only: carries the tint + outer shadow ABOVE the backdrop
+   layer. Anything painted below .lg-bg lands in Chromium's backdrop input,
+   so a host-level shadow gets displaced into the rim as a double ring. */
+.lg-chrome {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  /* Promote to its own layer; keeps the filter cheap to recomposite on move. */
-  will-change: filter;
+  border-radius: inherit;
 }
 
-/* A copy of the page background, sized to the viewport and offset by the core
-   so it lines up with the real background behind the glass. */
-.lq-backdrop {
+/* Native degrade tier only: the edge half of the rim-frost. The .lg-bg keeps
+   a light overall blur so content behind stays recognizable; this layer adds
+   a heavy blur masked to a ring, echoing the refractive tiers' clear-middle /
+   frosted-bevel material without any displacement work. */
+.lg-frost {
   position: absolute;
-  top: 0;
-  left: 0;
-  background-repeat: no-repeat;
-  background-size: cover;
-  /* Offset by the core via transform; hint the compositor. */
-  will-change: transform;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  -webkit-mask-image: radial-gradient(
+    130% 130% at 50% 50%,
+    transparent 46%,
+    black 78%
+  );
+  mask-image: radial-gradient(130% 130% at 50% 50%, transparent 46%, black 78%);
 }
 
-/* Tint + rim light + hairline border + drop shadow. */
-.lq-sheen {
+/* CSS rim light + directional sheen. */
+.lg-sheen {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
+  border-radius: inherit;
 }
 
-/* The real, interactive content rides on top. */
-.lq-content {
+/* Consumer children stay crisp and interactive on top. */
+.lg > :not(.lg-sheen):not(.lg-bg):not(.lg-chrome):not(.lg-frost) {
   position: relative;
   z-index: 2;
-  height: 100%;
+}
+
+/* ── Content surface ────────────────────────────────────────────────────── */
+
+/* `isolation` gives the surface its own stacking context (needed by the
+   `.lgs-bg` negative z-index below) without promoting a compositor layer. */
+.lgs-surface {
+  isolation: isolate;
+}
+
+/* Viewport-registered page-background copy behind the surface content, so
+   lenses bend wallpaper + content together. First child; the negative
+   z-index keeps it under the content inside the surface's own stacking
+   context (from `isolation` above). */
+.lgs-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-repeat: no-repeat;
+}
+
+/* ── Media surface ──────────────────────────────────────────────────────── */
+
+/* WebGL overlay positioned over the media rect by the core. (A WebGL canvas
+   gets its own compositor layer without any promotion hints.) */
+.lgm-overlay {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* ── Safari-only compositor promotion ───────────────────────────────────── */
+
+/* Real Safari blanks feImage-backed SVG filters on non-composited layers
+   (ARCHITECTURE, Safari rule 1), so the core adds this class to every
+   filtered element behind a UA gate. It must never apply on other engines:
+   promoting every background layer forces a texture re-upload of each one on
+   every scrolled frame — measured 8fps → 49fps in the demo when Chromium
+   stopped promoting. Inline transforms set by the core append translateZ(0)
+   on Safari for the same reason. */
+.lg-composited {
+  transform: translateZ(0);
+  will-change: transform;
 }

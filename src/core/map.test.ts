@@ -1,0 +1,222 @@
+import { describe, expect, it, vi } from "vitest";
+import { generateDisplacementMap, generateSpecularHighlight } from "./map.js";
+
+describe("generateDisplacementMap", () => {
+  it("returns null without a 2D canvas context (e.g. jsdom)", () => {
+    // jsdom has no canvas backend; the function should degrade gracefully.
+    const spy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    expect(generateDisplacementMap({ width: 40, height: 40 })).toBeNull();
+    spy.mockRestore();
+  });
+
+  // jsdom has no canvas rasteriser, so stand in a fake 2D context that captures
+  // the ImageData the generator writes, letting us inspect its channels.
+  function captureMap(options: Parameters<typeof generateDisplacementMap>[0]): {
+    data: Uint8ClampedArray;
+    w: number;
+  } {
+    const captured: { data: Uint8ClampedArray; w: number } = {
+      data: new Uint8ClampedArray(0),
+      w: 0,
+    };
+    const fakeCtx = {
+      createImageData(w: number, h: number) {
+        const data = new Uint8ClampedArray(w * h * 4);
+        captured.data = data;
+        captured.w = w;
+        return { data, width: w, height: h };
+      },
+      putImageData() {},
+    };
+    const ctxSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(fakeCtx as unknown as CanvasRenderingContext2D);
+    const urlSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "toDataURL")
+      .mockReturnValue("data:image/png,x");
+    generateDisplacementMap(options);
+    ctxSpy.mockRestore();
+    urlSpy.mockRestore();
+    return captured;
+  }
+
+  const byteAt = (
+    m: { data: Uint8ClampedArray; w: number },
+    x: number,
+    y: number,
+    channel: number,
+  ) => m.data[(y * m.w + x) * 4 + channel];
+
+  it("shapes alpha by SDF coverage when maskAlpha is on", () => {
+    const m = captureMap({
+      width: 40,
+      height: 40,
+      radius: 8,
+      dpr: 1,
+      inset: 0,
+      maskAlpha: true,
+    });
+    // Well inside the rounded rect → fully covered; a corner is outside it → 0.
+    expect(byteAt(m, 20, 20, 3)).toBe(255);
+    expect(byteAt(m, 0, 0, 3)).toBe(0);
+  });
+
+  it("leaves alpha fully opaque when maskAlpha is off (default path)", () => {
+    const m = captureMap({
+      width: 40,
+      height: 40,
+      radius: 8,
+      dpr: 1,
+      inset: 0,
+    });
+    expect(byteAt(m, 20, 20, 3)).toBe(255);
+    expect(byteAt(m, 0, 0, 3)).toBe(255);
+  });
+
+  it("scales dx/dy displacement by amplitude before the 128 offset", () => {
+    const base = { width: 40, height: 40, radius: 0, depth: 16, dpr: 1 };
+    const full = captureMap({ ...base, amplitude: 1 });
+    const half = captureMap({ ...base, amplitude: 0.5 });
+
+    // A rim pixel near the left edge bends leftwards (dx < 0 → byte < 128).
+    const fullDx = byteAt(full, 2, 20, 0) - 128;
+    const halfDx = byteAt(half, 2, 20, 0) - 128;
+    expect(fullDx).toBeLessThan(-20);
+    expect(Math.abs(halfDx - fullDx / 2)).toBeLessThanOrEqual(1);
+
+    // Same for dy on the top edge.
+    const fullDy = byteAt(full, 20, 2, 1) - 128;
+    const halfDy = byteAt(half, 20, 2, 1) - 128;
+    expect(fullDy).toBeLessThan(-20);
+    expect(Math.abs(halfDy - fullDy / 2)).toBeLessThanOrEqual(1);
+
+    // The neutral centre stays neutral regardless of amplitude
+    // (127 vs 128: 0.5 × 255 truncates).
+    expect(Math.abs(byteAt(half, 20, 20, 0) - 128)).toBeLessThanOrEqual(1);
+    expect(Math.abs(byteAt(half, 20, 20, 1) - 128)).toBeLessThanOrEqual(1);
+  });
+
+  it("reverses rounded-pill rim and corner sampling with negative amplitude", () => {
+    const outward = captureMap({
+      width: 120,
+      height: 60,
+      radius: 30,
+      depth: 18,
+      dpr: 1,
+      amplitude: 1,
+    });
+    const inward = captureMap({
+      width: 120,
+      height: 60,
+      radius: 30,
+      depth: 18,
+      dpr: 1,
+      amplitude: -1,
+    });
+
+    // Straight left rim: outward samples beyond the host; inward samples the
+    // available centre pixels instead.
+    expect(byteAt(outward, 2, 30, 0)).toBeLessThan(128);
+    expect(byteAt(inward, 2, 30, 0)).toBeGreaterThan(128);
+
+    // Rounded top-left corner reverses both axes toward the pill centre.
+    expect(byteAt(outward, 12, 12, 0)).toBeLessThan(128);
+    expect(byteAt(outward, 12, 12, 1)).toBeLessThan(128);
+    expect(byteAt(inward, 12, 12, 0)).toBeGreaterThan(128);
+    expect(byteAt(inward, 12, 12, 1)).toBeGreaterThan(128);
+  });
+});
+
+describe("generateSpecularHighlight", () => {
+  it("returns null without a 2D canvas context (e.g. jsdom)", () => {
+    const spy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    expect(
+      generateSpecularHighlight({
+        width: 40,
+        height: 40,
+        specular: 0.5,
+      }),
+    ).toBeNull();
+    spy.mockRestore();
+  });
+
+  function captureHighlight(
+    options: Parameters<typeof generateSpecularHighlight>[0],
+  ): { data: Uint8ClampedArray; w: number } {
+    const captured: { data: Uint8ClampedArray; w: number } = {
+      data: new Uint8ClampedArray(0),
+      w: 0,
+    };
+    const fakeCtx = {
+      createImageData(w: number, h: number) {
+        const data = new Uint8ClampedArray(w * h * 4);
+        captured.data = data;
+        captured.w = w;
+        return { data, width: w, height: h };
+      },
+      putImageData() {},
+    };
+    const ctxSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(fakeCtx as unknown as CanvasRenderingContext2D);
+    const urlSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "toDataURL")
+      .mockReturnValue("data:image/png,spec");
+    expect(generateSpecularHighlight(options)).toBe("data:image/png,spec");
+    ctxSpy.mockRestore();
+    urlSpy.mockRestore();
+    return captured;
+  }
+
+  const byteAt = (
+    m: { data: Uint8ClampedArray; w: number },
+    x: number,
+    y: number,
+    channel: number,
+  ) => m.data[(y * m.w + x) * 4 + channel];
+
+  it("renders white inside pixels with directional alpha and transparent exterior", () => {
+    const m = captureHighlight({
+      width: 40,
+      height: 40,
+      radius: 8,
+      depth: 12,
+      dpr: 1,
+      specular: 1,
+      specularAngle: 0,
+    });
+
+    expect(byteAt(m, 38, 20, 0)).toBe(255);
+    expect(byteAt(m, 38, 20, 1)).toBe(255);
+    expect(byteAt(m, 38, 20, 2)).toBe(255);
+    expect(byteAt(m, 38, 20, 3)).toBeGreaterThan(0);
+    expect(byteAt(m, 1, 20, 3)).toBe(0);
+    expect(byteAt(m, 0, 0, 3)).toBe(0);
+  });
+
+  it("applies specular strength twice like the former map-plus-bake pipeline", () => {
+    const full = captureHighlight({
+      width: 40,
+      height: 40,
+      depth: 12,
+      dpr: 1,
+      specular: 1,
+      specularAngle: 0,
+    });
+    const half = captureHighlight({
+      width: 40,
+      height: 40,
+      depth: 12,
+      dpr: 1,
+      specular: 0.5,
+      specularAngle: 0,
+    });
+    const fullAlpha = byteAt(full, 38, 20, 3);
+    const halfAlpha = byteAt(half, 38, 20, 3);
+    expect(Math.abs(halfAlpha - fullAlpha / 4)).toBeLessThanOrEqual(1);
+  });
+});

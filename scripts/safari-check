@@ -1,0 +1,485 @@
+#!/usr/bin/env node
+import { createServer } from "node:http";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { inflateSync } from "node:zlib";
+
+const PNG_SIGNATURE = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
+
+function parseArgs(argv) {
+  const args = {
+    baseline: "test/baselines/safari",
+    out: "__screenshots__/safari-check",
+    threshold: 8,
+    wait: 1500,
+    width: 1280,
+    height: 900,
+    updateBaseline: false,
+    url: null,
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const next = () => {
+      const value = argv[++i];
+      if (!value) throw new Error(`Missing value for ${arg}`);
+      return value;
+    };
+
+    if (arg === "--baseline") args.baseline = next();
+    else if (arg === "--out") args.out = next();
+    else if (arg === "--threshold") args.threshold = Number(next());
+    else if (arg === "--wait") args.wait = Number(next());
+    else if (arg === "--width") args.width = Number(next());
+    else if (arg === "--height") args.height = Number(next());
+    else if (arg === "--url") args.url = next();
+    else if (arg === "--update-baseline") args.updateBaseline = true;
+    else if (arg === "--help" || arg === "-h") {
+      console.log(`Usage: npm run safari-check -- [options]
+
+Options:
+  --url <url>              Use an already-running fixture URL.
+  --out <dir>              Screenshot output directory.
+  --baseline <dir>         Baseline directory for optional pixel diffs.
+  --update-baseline        Write current screenshots as baselines.
+  --threshold <number>     RMSE threshold for baseline diffs. Default: 8.
+  --width <px>             Safari window width. Default: 1280.
+  --height <px>            Safari window height. Default: 900.
+  --wait <ms>              Wait after page load before screenshot. Default: 1500.
+`);
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+
+  return args;
+}
+
+function run(command, args, options = {}) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(command, args, {
+      cwd: process.cwd(),
+      stdio: "inherit",
+      ...options,
+    });
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      if (code === 0) resolvePromise();
+      else reject(new Error(`${command} exited with ${code ?? signal}`));
+    });
+  });
+}
+
+function delay(ms) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+
+async function waitFor(predicate, label, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      if (await predicate()) return;
+    } catch (error) {
+      lastError = error;
+    }
+    await delay(150);
+  }
+  throw new Error(`Timed out waiting for ${label}: ${lastError ?? "no reply"}`);
+}
+
+function getPort() {
+  return new Promise((resolvePromise, reject) => {
+    const server = createServer();
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(() => resolvePromise(port));
+    });
+    server.on("error", reject);
+  });
+}
+
+function mimeType(pathname) {
+  if (pathname.endsWith(".html")) return "text/html; charset=utf-8";
+  if (pathname.endsWith(".js")) return "text/javascript; charset=utf-8";
+  if (pathname.endsWith(".css")) return "text/css; charset=utf-8";
+  if (pathname.endsWith(".svg")) return "image/svg+xml";
+  if (pathname.endsWith(".png")) return "image/png";
+  if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg"))
+    return "image/jpeg";
+  if (pathname.endsWith(".webp")) return "image/webp";
+  if (pathname.endsWith(".mp4")) return "video/mp4";
+  return "application/octet-stream";
+}
+
+async function serveStatic(root) {
+  const server = createServer(async (request, response) => {
+    try {
+      const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      const pathname = decodeURIComponent(url.pathname);
+      let file = resolve(root, `.${pathname}`);
+      if (!file.startsWith(root)) {
+        response.writeHead(403);
+        response.end("Forbidden");
+        return;
+      }
+
+      let fileStat = await stat(file).catch(() => null);
+      if (fileStat?.isDirectory()) file = join(file, "index.html");
+      fileStat = await stat(file).catch(() => null);
+      if (!fileStat?.isFile()) file = join(root, "index.html");
+
+      response.writeHead(200, { "content-type": mimeType(file) });
+      response.end(await readFile(file));
+    } catch (error) {
+      response.writeHead(500);
+      response.end(String(error));
+    }
+  });
+
+  await new Promise((resolvePromise, reject) => {
+    server.listen(0, "127.0.0.1", resolvePromise);
+    server.on("error", reject);
+  });
+
+  const address = server.address();
+  if (!address || typeof address !== "object") {
+    throw new Error("Static server did not expose a TCP address");
+  }
+
+  return {
+    url: `http://127.0.0.1:${address.port}/`,
+    close: () => new Promise((resolvePromise) => server.close(resolvePromise)),
+  };
+}
+
+async function ensureDemoServer(url) {
+  if (url) return { url, close: async () => {} };
+
+  const dist = resolve(process.cwd(), "examples/demo/dist");
+  if (!existsSync(join(dist, "index.html"))) {
+    await run("npm", ["run", "build:demo"]);
+  }
+  return serveStatic(dist);
+}
+
+async function startSafariDriver() {
+  const port = await getPort();
+  const logPath = join(tmpdir(), `liquid-glass-safaridriver-${port}.log`);
+  const driver = spawn("safaridriver", ["-p", String(port)], {
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  const chunks = [];
+  driver.stderr.on("data", (chunk) => chunks.push(chunk));
+  driver.on("exit", () => {
+    if (chunks.length) writeFile(logPath, Buffer.concat(chunks)).catch(() => {});
+  });
+
+  const base = `http://127.0.0.1:${port}`;
+  await waitFor(async () => {
+    const response = await fetch(`${base}/status`);
+    return response.ok;
+  }, "safaridriver");
+
+  return {
+    base,
+    close: async () => {
+      driver.kill("SIGTERM");
+      await delay(250);
+    },
+  };
+}
+
+async function webdriver(base, method, path, body) {
+  const response = await fetch(`${base}${path}`, {
+    method,
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || json.value?.error) {
+    const message = json.value?.message ?? response.statusText;
+    throw new Error(`WebDriver ${method} ${path} failed: ${message}`);
+  }
+  return json.value;
+}
+
+async function withSafari(driver, options, callback) {
+  let sessionId = null;
+  try {
+    const session = await webdriver(driver.base, "POST", "/session", {
+      capabilities: { alwaysMatch: { browserName: "safari" } },
+    });
+    sessionId = session.sessionId;
+    await webdriver(driver.base, "POST", `/session/${sessionId}/window/rect`, {
+      width: options.width,
+      height: options.height,
+      x: 0,
+      y: 0,
+    });
+    return await callback(sessionId);
+  } catch (error) {
+    if (String(error).includes("Allow Remote Automation")) throw error;
+    if (String(error).includes("safaridriver")) throw error;
+    throw new Error(
+      `${error}\nEnable Safari remote automation first: safaridriver --enable`,
+    );
+  } finally {
+    if (sessionId) {
+      await webdriver(driver.base, "DELETE", `/session/${sessionId}`).catch(
+        () => {},
+      );
+    }
+  }
+}
+
+function paeth(a, b, c) {
+  const p = a + b - c;
+  const pa = Math.abs(p - a);
+  const pb = Math.abs(p - b);
+  const pc = Math.abs(p - c);
+  if (pa <= pb && pa <= pc) return a;
+  if (pb <= pc) return b;
+  return c;
+}
+
+function decodePng(buffer) {
+  if (!buffer.subarray(0, 8).equals(PNG_SIGNATURE)) {
+    throw new Error("Not a PNG file");
+  }
+
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  let interlace = 0;
+  const idat = [];
+
+  while (offset < buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString("ascii", offset + 4, offset + 8);
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    offset += 12 + length;
+
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      interlace = data[12];
+    } else if (type === "IDAT") {
+      idat.push(data);
+    } else if (type === "IEND") {
+      break;
+    }
+  }
+
+  const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
+  if (bitDepth !== 8 || interlace !== 0 || !channels) {
+    throw new Error(
+      `Unsupported PNG format: bitDepth=${bitDepth} colorType=${colorType} interlace=${interlace}`,
+    );
+  }
+
+  const bpp = channels;
+  const stride = width * bpp;
+  const raw = inflateSync(Buffer.concat(idat));
+  const rgba = Buffer.alloc(width * height * 4);
+  let input = 0;
+  let output = 0;
+  let previous = Buffer.alloc(stride);
+
+  for (let y = 0; y < height; y++) {
+    const filter = raw[input++];
+    const current = Buffer.alloc(stride);
+    for (let x = 0; x < stride; x++) {
+      const left = x >= bpp ? current[x - bpp] : 0;
+      const up = previous[x] ?? 0;
+      const upLeft = x >= bpp ? previous[x - bpp] : 0;
+      const value = raw[input++];
+      if (filter === 0) current[x] = value;
+      else if (filter === 1) current[x] = (value + left) & 255;
+      else if (filter === 2) current[x] = (value + up) & 255;
+      else if (filter === 3) current[x] = (value + ((left + up) >> 1)) & 255;
+      else if (filter === 4) current[x] = (value + paeth(left, up, upLeft)) & 255;
+      else throw new Error(`Unsupported PNG filter: ${filter}`);
+    }
+
+    for (let x = 0; x < width; x++) {
+      const i = x * bpp;
+      if (colorType === 0) {
+        const v = current[i];
+        rgba[output++] = v;
+        rgba[output++] = v;
+        rgba[output++] = v;
+        rgba[output++] = 255;
+      } else if (colorType === 2) {
+        rgba[output++] = current[i];
+        rgba[output++] = current[i + 1];
+        rgba[output++] = current[i + 2];
+        rgba[output++] = 255;
+      } else if (colorType === 4) {
+        const v = current[i];
+        rgba[output++] = v;
+        rgba[output++] = v;
+        rgba[output++] = v;
+        rgba[output++] = current[i + 1];
+      } else {
+        rgba[output++] = current[i];
+        rgba[output++] = current[i + 1];
+        rgba[output++] = current[i + 2];
+        rgba[output++] = current[i + 3];
+      }
+    }
+
+    previous = current;
+  }
+
+  return { width, height, rgba };
+}
+
+function imageStats(image) {
+  let sampled = 0;
+  let alphaPixels = 0;
+  let sum = 0;
+  let sumSquares = 0;
+  const unique = new Set();
+
+  for (let i = 0; i < image.rgba.length; i += 4 * 17) {
+    sampled++;
+    const alpha = image.rgba[i + 3];
+    if (alpha === 0) continue;
+    const r = image.rgba[i];
+    const g = image.rgba[i + 1];
+    const b = image.rgba[i + 2];
+    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    alphaPixels++;
+    sum += luma;
+    sumSquares += luma * luma;
+    unique.add(`${r >> 4}:${g >> 4}:${b >> 4}`);
+  }
+
+  const mean = alphaPixels ? sum / alphaPixels : 0;
+  const variance = alphaPixels ? sumSquares / alphaPixels - mean * mean : 0;
+  return {
+    sampled,
+    alphaPixels,
+    unique: unique.size,
+    mean,
+    stddev: Math.sqrt(Math.max(0, variance)),
+  };
+}
+
+function diffImages(actual, expected) {
+  if (actual.width !== expected.width || actual.height !== expected.height) {
+    throw new Error(
+      `Screenshot size changed: ${actual.width}x${actual.height} != ${expected.width}x${expected.height}`,
+    );
+  }
+
+  let total = 0;
+  let count = 0;
+  for (let i = 0; i < actual.rgba.length; i += 4) {
+    for (let c = 0; c < 3; c++) {
+      const delta = actual.rgba[i + c] - expected.rgba[i + c];
+      total += delta * delta;
+      count++;
+    }
+  }
+
+  return Math.sqrt(total / count);
+}
+
+async function waitForReady(driverBase, sessionId) {
+  await waitFor(async () => {
+    const readyState = await webdriver(
+      driverBase,
+      "POST",
+      `/session/${sessionId}/execute/sync`,
+      { script: "return document.readyState", args: [] },
+    );
+    return readyState === "complete";
+  }, "Safari document readiness");
+}
+
+async function checkFixture(driver, server, options) {
+  const name = "demo";
+  const url = server.url;
+  const outDir = resolve(process.cwd(), options.out);
+  const baselineDir = resolve(process.cwd(), options.baseline);
+  await mkdir(outDir, { recursive: true });
+  if (options.updateBaseline) await mkdir(baselineDir, { recursive: true });
+
+  await withSafari(driver, options, async (sessionId) => {
+    await webdriver(driver.base, "POST", `/session/${sessionId}/url`, { url });
+    await waitForReady(driver.base, sessionId);
+    await delay(options.wait);
+
+    const base64 = await webdriver(
+      driver.base,
+      "GET",
+      `/session/${sessionId}/screenshot`,
+    );
+    const png = Buffer.from(base64, "base64");
+    const screenshotPath = join(outDir, `${name}.png`);
+    await writeFile(screenshotPath, png);
+
+    const actual = decodePng(png);
+    const stats = imageStats(actual);
+    if (stats.alphaPixels < stats.sampled * 0.95) {
+      throw new Error(`Safari screenshot has too many transparent pixels`);
+    }
+    if (stats.unique < 16 || stats.stddev < 8) {
+      throw new Error(
+        `Safari screenshot looks blank: unique=${stats.unique}, stddev=${stats.stddev.toFixed(2)}`,
+      );
+    }
+
+    const baselinePath = join(baselineDir, `${name}.png`);
+    if (options.updateBaseline) {
+      await writeFile(baselinePath, png);
+      console.log(`Updated Safari baseline: ${baselinePath}`);
+    } else if (existsSync(baselinePath)) {
+      const expected = decodePng(await readFile(baselinePath));
+      const rmse = diffImages(actual, expected);
+      if (rmse > options.threshold) {
+        throw new Error(
+          `Safari pixel diff ${rmse.toFixed(2)} exceeds threshold ${options.threshold}`,
+        );
+      }
+      console.log(`Safari pixel diff: ${rmse.toFixed(2)}`);
+    } else {
+      console.log(`No Safari baseline at ${baselinePath}; skipped diff.`);
+    }
+
+    console.log(
+      `Safari ${name}: ${actual.width}x${actual.height}, unique=${stats.unique}, stddev=${stats.stddev.toFixed(2)}, screenshot=${screenshotPath}`,
+    );
+  });
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const server = await ensureDemoServer(options.url);
+  const driver = await startSafariDriver();
+
+  try {
+    await checkFixture(driver, server, options);
+  } finally {
+    await driver.close();
+    await server.close();
+  }
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(1);
+});

@@ -22,3 +22,264 @@ export interface LensRect {
 
 /** A full lens spec: where it is plus how it looks. */
 export type LensSpec = LensRect & LensMaterial;
+
+/** Visual material of a glass panel (filter + CSS chrome). */
+export interface GlassMaterial {
+  /** corner radius, px or "NN%" (default 16) */
+  radius?: number | string;
+  /** refracting rim thickness, px (default 14) */
+  depth?: number;
+  /** displacement strength, px (default 90) */
+  scale?: number;
+  /** frost, px (default 0.6) */
+  blur?: number;
+  /** chromatic aberration 0..1 (default 0.4) */
+  chroma?: number;
+  /** filter specular 0..1 (default 0) */
+  specular?: number;
+  /** light direction, degrees (default 135) */
+  specularAngle?: number;
+  /** displacement-map supersampling (default 2) */
+  dpr?: number;
+  /** CSS tint background (default "rgba(255,255,255,0.06)") */
+  tint?: string;
+  /** CSS bevel strength 0..1.5 (default 0.6) */
+  rimLight?: number;
+  /** CSS drop shadow */
+  shadow?: string;
+}
+
+/** Renderer diagnostics reported by a glass lens. */
+export type GlassBackend =
+  | "backdrop"
+  | "background-copy"
+  | "content-svg"
+  | "media-webgl"
+  | "native"
+  | "none";
+
+/** Performance/fidelity policy. Budget enforcement is applied by the runtime. */
+export type GlassQuality = "performance" | "balanced" | "fidelity";
+
+/** Visual fallback used when the preferred renderer cannot run safely. */
+export type GlassFallback = "blur" | "tint" | "none";
+
+/** Curated material starting points. Explicit material options always win. */
+export type GlassPreset = "thin" | "regular" | "prominent";
+
+/** The user-visible source relationship requested for a glass lens. */
+export type GlassUseCase = "auto" | "page" | "region" | "media" | "wallpaper";
+
+/** Options for {@link glass}. */
+export interface GlassOptions extends GlassMaterial {
+  /** Curated material starting point. Default `"regular"`. */
+  preset?: GlassPreset;
+  /** Runtime performance/fidelity policy. Default `"balanced"`. */
+  quality?: GlassQuality;
+  /** Degradation appearance. Default `"blur"`. */
+  fallback?: GlassFallback;
+  /** Called only when the stable ordered renderer set changes. */
+  onBackendChange?: (backends: readonly GlassBackend[]) => void;
+  /** Legacy routing control. Prefer the named page, region, or media API. */
+  surfaces?: "auto" | SurfaceHandle[];
+  /** "live" = geometry re-read every frame (for JS-animated lenses). Default "auto". */
+  track?: "auto" | "live";
+  /**
+   * Legacy source control. A CSS string selects known wallpaper artwork.
+   * `"auto"` uses a registered source, the Chrome page route, or native frost.
+   */
+  background?: "auto" | false | string;
+}
+
+/** Live handle returned by {@link glass}. */
+export interface GlassHandle {
+  /** Stable ordered renderers currently contributing to this lens. */
+  readonly backends: readonly GlassBackend[];
+  /** Material and option patches; cheap for CSS-only props. */
+  update(patch: GlassOptions): void;
+  /** Notify after programmatic moves outside scroll/resize. */
+  geometryChanged(): void;
+  /** Force full re-sync (maps, filters, routing). */
+  refresh(): void;
+  /** Restore the element completely. */
+  destroy(): void;
+}
+
+/** Appearance options shared by the explicit use-case helpers. */
+export type GlassAppearanceOptions = Omit<
+  GlassOptions,
+  "surfaces" | "background"
+>;
+
+/** A glass handle whose source relationship cannot change through update(). */
+export type GlassSourceHandle = Omit<GlassHandle, "update"> & {
+  update(patch: GlassAppearanceOptions): void;
+};
+
+/** Options for {@link createGlassRegion}. */
+export interface SurfaceOptions {
+  /**
+   * Paint the page background behind this surface's content (inside the
+   * surface, in a `.lgs-bg` layer) so lenses bend wallpaper + content
+   * together and `background-attachment: fixed`-style backdrops survive
+   * filtering. true = auto-detected page background; string = explicit CSS.
+   */
+  background?: boolean | string;
+}
+
+/** Base handle for a registered source. */
+export interface SurfaceHandle {
+  readonly element: HTMLElement;
+  refresh(): void;
+  destroy(): void;
+}
+
+/** A marked live DOM region that a lens can refract. */
+export interface GlassRegionHandle extends SurfaceHandle {
+  readonly sourceType: "region";
+}
+
+/** A registered image, video, or canvas that a lens can refract. */
+export interface GlassMediaHandle extends SurfaceHandle {
+  readonly sourceType: "media";
+}
+
+/** Options for {@link glassOverRegion}. */
+export type GlassOverRegionOptions = GlassAppearanceOptions & {
+  /** Restrict the lens to these regions. Default: overlapping registered regions. */
+  region?: GlassRegionHandle | readonly GlassRegionHandle[];
+};
+
+/** Options for {@link glassOverMedia}. */
+export type GlassOverMediaOptions = GlassAppearanceOptions & {
+  /** Restrict the lens to these media sources. Default: overlapping registered media. */
+  media?: GlassMediaHandle | readonly GlassMediaHandle[];
+};
+
+/** Options for {@link createGlassMedia}. */
+export interface MediaSurfaceOptions {
+  /** Re-upload the source every frame while a lens overlaps (playing video). */
+  live?: boolean;
+}
+
+/**
+ * @internal Fully-resolved per-lens filter material (radius already in px for
+ * the lens box). Not part of the public API.
+ */
+export interface ResolvedLensMaterial {
+  radius: number;
+  depth: number;
+  scale: number;
+  blur: number;
+  chroma: number;
+  specular: number;
+  specularAngle: number;
+  dpr: number;
+  quality: GlassQuality;
+  fallback: GlassFallback;
+}
+
+/** Provisional device-pixel area budgets; override after product calibration. */
+export interface GlassBudgets {
+  chromium?: number;
+  firefox?: number;
+  webkit?: number;
+}
+
+/** Defaults inherited by every lens created through a scope. */
+export interface GlassScopeOptions extends GlassOptions {
+  budgets?: GlassBudgets;
+}
+
+/** Stable counters intended for diagnostics and automated invariants. */
+export interface GlassDiagnostics {
+  readonly lenses: number;
+  readonly contentSurfaces: number;
+  readonly mediaSurfaces: number;
+  readonly filterRebuilds: number;
+  readonly mapRegenerations: number;
+  readonly geometryRafCallbacks: number;
+  readonly mediaRafCallbacks: number;
+  readonly mediaUploads: number;
+  readonly backdropWorkload: {
+    readonly lenses: number;
+    readonly devicePixelPassArea: number;
+    readonly tier: "full" | "lean";
+    readonly reason: string;
+  };
+  /** Aggregate painted-copy cost and the engine safety tier it selected. */
+  readonly backgroundCopyWorkload: {
+    readonly lenses: number;
+    readonly devicePixelPassArea: number;
+    readonly tier: "full" | "lean" | "native" | "partial";
+    /** Lenses currently admitted to the refractive copy tier. */
+    readonly admitted: number;
+    readonly reason: string;
+  };
+  readonly policy: readonly {
+    backend: GlassBackend;
+    reason: string;
+    dpr: number;
+    chroma: number;
+    specular: number;
+    filterWidth: number;
+    filterHeight: number;
+    deviceArea: number;
+  }[];
+}
+
+/** Isolated routing/background/runtime owner. */
+export interface GlassScope {
+  glass(element: HTMLElement, options?: GlassOptions): GlassHandle;
+  glassOverPage(
+    element: HTMLElement,
+    options?: GlassAppearanceOptions,
+  ): GlassSourceHandle;
+  glassOverRegion(
+    element: HTMLElement,
+    options?: GlassOverRegionOptions,
+  ): GlassSourceHandle;
+  glassOverMedia(
+    element: HTMLElement,
+    options?: GlassOverMediaOptions,
+  ): GlassSourceHandle;
+  glassOverWallpaper(
+    element: HTMLElement,
+    wallpaper: string,
+    options?: GlassAppearanceOptions,
+  ): GlassSourceHandle;
+  createGlassRegion(
+    element: HTMLElement,
+    options?: SurfaceOptions,
+  ): GlassRegionHandle;
+  createGlassMedia(
+    media: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
+    options?: MediaSurfaceOptions,
+  ): GlassMediaHandle;
+  /** @deprecated Use {@link createGlassRegion}. */
+  createSurface(
+    element: HTMLElement,
+    options?: SurfaceOptions,
+  ): GlassRegionHandle;
+  /** @deprecated Use {@link createGlassMedia}. */
+  createMediaSurface(
+    media: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
+    options?: MediaSurfaceOptions,
+  ): GlassMediaHandle;
+  setBackground(background: string | null): void;
+  getDiagnostics(): GlassDiagnostics;
+  destroy(): void;
+}
+
+/** One movable lens inside a shared content-surface filter. */
+export interface SubLens {
+  /** stable per lens registration */
+  id: string;
+  /** lens box, CSS px in the filtered element's coordinate space */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** per-lens displacement map (own radius/depth/specular/amplitude) */
+  mapUrl: string;
+}

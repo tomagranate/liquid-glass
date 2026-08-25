@@ -9,7 +9,7 @@ import {
   MapPinIcon,
   MusicalNoteIcon,
 } from "@heroicons/react/24/solid";
-import { GlassPanel } from "./GlassPanel.tsx";
+import { GlassOverPage } from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 interface DockApp {
@@ -88,29 +88,32 @@ const DOCK_GLASS = {
  */
 export function GlassDock() {
   return (
-    <GlassPanel
-      className="glassx-dock"
-      contentClassName="glassx-dock-row"
-      glass={DOCK_GLASS}
-    >
-      {APPS.map(({ id, label, gradient, Icon }) => (
-        <button
-          key={id}
-          type="button"
-          className="glassx-dock-app"
-          title={label}
-          aria-label={label}
-        >
-          <span
-            className="glassx-dock-icon"
-            style={{ background: gradient }}
-            aria-hidden="true"
+    <div className="glassx-dock">
+      <GlassOverPage
+        className="glassx-dock-slab"
+        {...DOCK_GLASS}
+        aria-hidden="true"
+      />
+      <div className="glassx-dock-row">
+        {APPS.map(({ id, label, gradient, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            className="glassx-dock-app"
+            title={label}
+            aria-label={label}
           >
-            <Icon className="glassx-dock-glyph" />
-          </span>
-        </button>
-      ))}
-    </GlassPanel>
+            <span
+              className="glassx-dock-icon"
+              style={{ background: gradient }}
+              aria-hidden="true"
+            >
+              <Icon className="glassx-dock-glyph" />
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

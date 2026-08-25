@@ -9,6 +9,24 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      window.__liquidGlassDemoErrors = [];
+      const recordDemoError = (value) =>
+        window.__liquidGlassDemoErrors.push(
+          String(value?.stack || value),
+        );
+      window.addEventListener("error", (event) =>
+        recordDemoError(event.error || event.message),
+      );
+      window.addEventListener("unhandledrejection", (event) =>
+        recordDemoError(event.reason),
+      );
+      const originalConsoleError = console.error.bind(console);
+      console.error = (...values) => {
+        recordDemoError(values.join(" "));
+        originalConsoleError(...values);
+      };
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

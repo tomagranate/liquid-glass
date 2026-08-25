@@ -1,19 +1,10 @@
-import {
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   PlayIcon,
   SpeakerWaveIcon,
   SpeakerXMarkIcon,
 } from "@heroicons/react/20/solid";
-import type { LensSpec } from "@tomagranate/liquid-glass";
-import { useGlassTexture } from "@tomagranate/liquid-glass";
-import { GlassCopyContext } from "./flat.ts";
+import { GlassMedia, GlassOverMedia } from "@tomagranate/liquid-glass/react";
 import "./components.css";
 
 export interface GlassVideoPlayerProps {
@@ -25,59 +16,64 @@ export interface GlassVideoPlayerProps {
 }
 
 /* Deep, bubbly materials — the video should visibly pour through the rims. */
-const BAR_GLASS = { depth: 14, scale: 44, chroma: 0.6, specular: 0.6 };
-const SCRUB_GLASS = { depth: 10, scale: 26, chroma: 0.2, specular: 0.2 };
-const BUBBLE_GLASS = { depth: 24, scale: 36, chroma: 0.7, specular: 0.6 };
+const BAR_GLASS = {
+  radius: 999,
+  depth: 14,
+  scale: 44,
+  chroma: 0.6,
+  specular: 0.6,
+  tint: "rgba(4,10,20,0.48)",
+  rimLight: 1.1,
+  shadow: "0 8px 24px rgba(0,0,0,0.42)",
+};
+const SCRUB_GLASS = {
+  radius: 999,
+  depth: 10,
+  scale: 26,
+  chroma: 0.2,
+  specular: 0.2,
+  tint: "rgba(4,10,20,0.56)",
+  rimLight: 0.9,
+  shadow: "0 5px 18px rgba(0,0,0,0.4)",
+};
+const BUBBLE_GLASS = {
+  radius: "50%" as const,
+  depth: 24,
+  scale: 36,
+  chroma: 0.7,
+  specular: 0.6,
+  tint: "rgba(4,10,20,0.42)",
+  rimLight: 1.15,
+  shadow: "0 14px 36px rgba(0,0,0,0.46)",
+};
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
 /**
- * A video player whose controls are liquid glass. Each control is a lens over
- * the playing video, refracting it live. The `<video>` can't be read by an SVG
- * filter (and on Safari not at all), so the controls use the WebGL texture
- * backend ({@link useGlassTexture}); the icons ride on top in the DOM and stay
- * clickable. Starts paused behind a big glass play bubble; the bubble pops
- * away while playing and clicking the frame pauses again.
+ * A video player whose controls are liquid glass. The `<video>` is wrapped in a
+ * `<GlassMedia live>` — an SVG filter can't sample a playing video, so the
+ * media source uses WebGL. Each `<GlassOverMedia>` control states that
+ * relationship directly. Icons stay in the DOM and remain clickable.
  */
-export function GlassVideoPlayer(props: GlassVideoPlayerProps) {
-  const flat = useContext(GlassCopyContext);
-  return flat ? <FlatVideoPlayer {...props} /> : <VideoPlayerImpl {...props} />;
-}
-
-function FlatVideoPlayer({
-  poster = "/coast.jpg",
-  width = 480,
-  height = 270,
-}: GlassVideoPlayerProps) {
-  return (
-    <div
-      className="glassx glassx-video"
-      style={{
-        width: "100%",
-        maxWidth: width,
-        aspectRatio: `${width} / ${height}`,
-        backgroundImage: `url(${poster})`,
-      }}
-    />
-  );
-}
-
-function VideoPlayerImpl({
+export function GlassVideoPlayer({
   src = "/coast.mp4",
   poster = "/coast.jpg",
   width = 480,
   height = 270,
 }: GlassVideoPlayerProps) {
-  const hostRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [mediaReady, setMediaReady] = useState(false);
   const [muted, setMuted] = useState(true);
   const [progress, setProgress] = useState(0);
   const [size, setSize] = useState({ width, height });
   const aspectRatio = width / height;
+  const waitingTint = "rgba(220,245,255,0.34)";
 
+  // Measure the video element (absolutely filling the surface) so control
+  // positions track the rendered player size without relying on ref forwarding.
   useLayoutEffect(() => {
-    const node = hostRef.current;
+    const node = videoRef.current;
     if (!node) return;
 
     const updateSize = () => {
@@ -115,54 +111,36 @@ function VideoPlayerImpl({
       y: by + (barH - controlSize) / 2,
       w: controlSize,
       h: controlSize,
-      radius: controlSize / 2,
     };
     const scrub = {
       x: pad,
       y: by + (barH - scrubH) / 2,
       w: Math.max(0, vol.x - gap - pad),
       h: scrubH,
-      radius: scrubH / 2,
     };
     const bubble = {
       x: (playerWidth - bubbleSize) / 2,
       y: (playerHeight - bubbleSize) / 2,
       w: bubbleSize,
       h: bubbleSize,
-      radius: bubbleSize / 2,
     };
-
-    const lenses: LensSpec[] = [
-      { ...scrub, ...SCRUB_GLASS },
-      { ...vol, ...BAR_GLASS },
-      ...(playing ? [] : [{ ...bubble, ...BUBBLE_GLASS }]),
-    ];
-
-    return { bubble, lenses, scrub, vol };
-  }, [playing, size.height, size.width]);
-
-  const canvasRef = useGlassTexture({
-    getSource: () => videoRef.current,
-    width: size.width,
-    height: size.height,
-    lenses: layout.lenses,
-    live: true,
-  });
+    return { bubble, scrub, vol };
+  }, [size.height, size.width]);
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     const onTime = () =>
       setProgress(v.duration ? v.currentTime / v.duration : 0);
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const onPlay = () => setHasStarted(true);
+    const onPlaying = () => setMediaReady(true);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("play", onPlay);
-    v.addEventListener("pause", onPause);
+    v.addEventListener("playing", onPlaying);
     return () => {
       v.removeEventListener("timeupdate", onTime);
       v.removeEventListener("play", onPlay);
-      v.removeEventListener("pause", onPause);
+      v.removeEventListener("playing", onPlaying);
     };
   }, []);
 
@@ -184,10 +162,29 @@ function VideoPlayerImpl({
     const r = e.currentTarget.getBoundingClientRect();
     v.currentTime = ((e.clientX - r.left) / r.width) * v.duration;
   };
+  const seekWithKeyboard = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const v = videoRef.current;
+    if (
+      !v?.duration ||
+      !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)
+    ) {
+      return;
+    }
+    e.preventDefault();
+    if (e.key === "Home") v.currentTime = 0;
+    else if (e.key === "End") v.currentTime = v.duration;
+    else
+      v.currentTime = clamp(
+        v.currentTime + (e.key === "ArrowRight" ? 5 : -5),
+        0,
+        v.duration,
+      );
+    setProgress(v.currentTime / v.duration);
+  };
 
   return (
-    <div
-      ref={hostRef}
+    <GlassMedia
+      live
       className="glassx glassx-video"
       style={{
         width: "100%",
@@ -203,37 +200,39 @@ function VideoPlayerImpl({
         muted={muted}
         loop
         playsInline
-        // Decode the first frame while paused so the lenses have pixels to
-        // refract before playback starts (the loop skips readyState < 2).
-        preload="auto"
+        // The poster gives the lenses pixels to refract before playback;
+        // metadata-only preload keeps the request from holding the page busy.
+        preload="metadata"
         onClick={togglePlay}
       />
-      <canvas
-        ref={canvasRef}
-        className="glassx-video-glass"
-        aria-hidden="true"
-      />
 
-      {/* Interactive controls, positioned over their glass lenses. */}
-      <button
-        type="button"
-        className="glassx-video-ctl glassx-video-bigplay"
-        data-hidden={playing}
-        style={{
-          left: layout.bubble.x,
-          top: layout.bubble.y,
-          width: layout.bubble.w,
-          height: layout.bubble.h,
-        }}
-        onClick={togglePlay}
-        aria-label={playing ? "Pause" : "Play"}
-        tabIndex={playing ? -1 : 0}
-      >
-        <PlayIcon className="glassx-ctl-icon xl" />
-      </button>
+      {/* Interactive glass controls, positioned over the live video. */}
+      {!hasStarted && (
+        <GlassOverMedia
+          as="button"
+          type="button"
+          className="glassx-video-ctl glassx-video-bigplay"
+          data-waiting={!mediaReady}
+          {...BUBBLE_GLASS}
+          tint={mediaReady ? BUBBLE_GLASS.tint : waitingTint}
+          style={{
+            left: layout.bubble.x,
+            top: layout.bubble.y,
+            width: layout.bubble.w,
+            height: layout.bubble.h,
+          }}
+          onClick={togglePlay}
+          aria-label="Play"
+        >
+          <PlayIcon className="glassx-ctl-icon xl" />
+        </GlassOverMedia>
+      )}
 
-      <div
+      <GlassOverMedia
         className="glassx-video-scrub"
+        data-waiting={!mediaReady}
+        {...SCRUB_GLASS}
+        tint={mediaReady ? SCRUB_GLASS.tint : waitingTint}
         style={{
           left: layout.scrub.x,
           top: layout.scrub.y,
@@ -241,6 +240,7 @@ function VideoPlayerImpl({
           height: layout.scrub.h,
         }}
         onPointerDown={seek}
+        onKeyDown={seekWithKeyboard}
         role="slider"
         aria-label="Seek"
         aria-valuenow={Math.round(progress * 100)}
@@ -252,11 +252,15 @@ function VideoPlayerImpl({
           className="glassx-video-scrub-fill"
           style={{ width: `${progress * 100}%` }}
         />
-      </div>
+      </GlassOverMedia>
 
-      <button
+      <GlassOverMedia
+        as="button"
         type="button"
         className="glassx-video-ctl"
+        data-waiting={!mediaReady}
+        {...BAR_GLASS}
+        tint={mediaReady ? BAR_GLASS.tint : waitingTint}
         style={{
           left: layout.vol.x,
           top: layout.vol.y,
@@ -271,8 +275,8 @@ function VideoPlayerImpl({
         ) : (
           <SpeakerWaveIcon className="glassx-ctl-icon" />
         )}
-      </button>
-    </div>
+      </GlassOverMedia>
+    </GlassMedia>
   );
 }
 

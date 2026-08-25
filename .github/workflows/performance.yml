@@ -1,0 +1,58 @@
+name: Real-browser performance
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run the full 600-frame, five-repetition lane
+        type: boolean
+        default: true
+
+jobs:
+  branded-browsers:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build production package, fixture, and demo
+        run: npm run build && npm run build:perf && npm run build:demo
+      - name: Harness negative self-tests
+        run: npm run test:perf-harness
+      - name: Injected timing must fail the harness
+        run: node scripts/browser-perf.mjs --browser=chrome --quick=true --negative=timing --scenarios=content-small-motion --repetitions=1
+      - name: Removed output must fail correctness
+        run: node scripts/browser-perf.mjs --browser=chrome --quick=true --negative=blank --scenarios=content-small-motion --repetitions=1
+      - name: Enable real SafariDriver
+        continue-on-error: true
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Production demo tour in real branded browsers
+        run: node scripts/browser-demo-all.mjs
+      - name: Real branded browser quick gate
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && !inputs.full)
+        run: npm run perf:all -- --quick=true
+      - name: Real branded browser full gate
+        if: github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && !inputs.full)
+        run: npm run perf:all
+      - name: Publish job summary
+        if: always()
+        run: |
+          echo '## Real-browser performance artifacts' >> "$GITHUB_STEP_SUMMARY"
+          find artifacts/performance -name comparison.md -exec cat {} \; >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-browser-performance-${{ github.run_id }}
+          path: |
+            artifacts/performance
+            artifacts/demo-tour
+          if-no-files-found: warn

@@ -1,117 +1,287 @@
 # @tomagranate/liquid-glass
 
-An Apple-style **liquid-glass** (refraction) effect for the web. The whole effect
-rests on a single SVG filter primitive, **`feDisplacementMap`** — nothing is
-sampled from underneath the glass, the content's own pixels are the ones moving —
-so it's a plain `filter: url(#glass)` that works in **every** browser (Chromium,
-Firefox, Safari), no flags. Framework-independent, with optional React bindings
-and a WebGL texture backend for `<canvas>`/`<video>`.
+High-quality liquid glass for the web. The API names the content behind each
+glass element. This makes browser differences clear before you ship.
+
+The library has four explicit interfaces:
+
+| Source behind the glass | React | Vanilla | Chrome | Safari and Firefox |
+| --- | --- | --- | --- | --- |
+| Arbitrary live page | `<GlassOverPage>` | `glassOverPage()` | Live refraction | Polished frost |
+| Marked live DOM region | `<GlassOverRegion>` | `glassOverRegion()` | Live refraction | Live refraction within budget |
+| Registered image, video, or canvas | `<GlassOverMedia>` | `glassOverMedia()` | WebGL2 refraction | WebGL2 refraction |
+| Known CSS wallpaper | `<GlassOverWallpaper>` | `glassOverWallpaper()` | Painted refraction | Painted refraction within budget |
+
+This split is deliberate. Safari and Firefox cannot refract arbitrary page
+content with the Chromium compositor route. Page glass uses a stable frost on
+those browsers. The library never presents a wallpaper copy as live page
+refraction.
+
+## Install
 
 ```sh
 npm install @tomagranate/liquid-glass
 ```
 
-Peer deps: `react` and `react-dom` (>=18), only for the React bindings. The
-vanilla SVG backend has no dependencies and works on any DOM.
-
-## Quick start
-
-### Vanilla (any framework, or none)
+Import the stylesheet once:
 
 ```ts
-import { applyGlass } from "@tomagranate/liquid-glass";
 import "@tomagranate/liquid-glass/styles.css";
-
-const card = document.querySelector<HTMLElement>("#card");
-if (!card) throw new Error("Missing #card");
-
-const handle = applyGlass(card, {
-  radius: 18,
-  chroma: 0.4,
-});
-
-handle.update({ chroma: 0.6 }); // patch + re-render
-handle.destroy();               // tear down
 ```
 
-`applyGlass` builds the layer structure inside the element and refracts a copy of
-the page backdrop. The real element underneath stays selectable and clickable.
+## React quick start
 
-### React
+### Glass over the page
 
-Two bindings, one per source kind:
-
-- **`useGlass`** drives the SVG engine — for DOM surfaces (buttons, cards,
-  switches, sliders, toggles).
-- **`useGlassTexture`** drives the WebGL backend — for a `<canvas>` or `<video>`.
+Use this for navigation, floating controls, and overlays.
 
 ```tsx
-import { useGlass } from "@tomagranate/liquid-glass";
-import "@tomagranate/liquid-glass/styles.css";
+import { GlassOverPage } from "@tomagranate/liquid-glass/react";
 
-function GlassCard({ children }) {
-  const g = useGlass({ radius: 24, depth: 14, chroma: 0.4 });
+export function Navigation() {
   return (
-    <div ref={g.hostRef} className="lq">
-      <div ref={g.refractionRef} className="lq-refraction">
-        <div ref={g.backdropRef} className="lq-backdrop" />
-      </div>
-      <div ref={g.sheenRef} className="lq-sheen" />
-      <div className="lq-content">{children}</div>
+    <GlassOverPage as="nav" radius={999} preset="thin">
+      <a href="/">Home</a>
+    </GlassOverPage>
+  );
+}
+```
+
+Chrome refracts the live page. Safari and Firefox render polished frost.
+
+### Glass over a live region
+
+Use this when a bounded DOM region must refract in all supported browsers.
+Keep the lens outside the marked region subtree. The elements can overlap with
+CSS positioning.
+
+```tsx
+import {
+  GlassOverRegion,
+  GlassRegion,
+} from "@tomagranate/liquid-glass/react";
+
+export function ChartLens() {
+  return (
+    <div className="stage">
+      <GlassRegion className="chart">Live chart content</GlassRegion>
+      <GlassOverRegion className="lens" radius={24}>
+        42.8%
+      </GlassOverRegion>
     </div>
   );
 }
 ```
 
-The component renders the layers; the hook owns the controller lifecycle (so
-React stays in charge of the DOM). For a `<canvas>`/`<video>` surface use
-`useGlassTexture({ getSource, width, height, lenses, live })` instead.
+Pass a handle when one lens must target one region:
 
-See [`examples/demo/src/glass`](examples/demo/src/glass) for styled Button,
-Switch, Slider, Toggle Group, QR Code and Video Player built this way — copy and
-restyle them; the package itself ships the engine and the React bindings, not
-pre-styled widgets.
+```tsx
+const region = useGlassRegion(regionRef);
+useGlassOverRegion(lensRef, { region, radius: 24 });
+```
 
-## Options
+### Glass over media
 
-`applyGlass` (and `useGlass`) accept:
+Use this for an image, video, or canvas. The media needs the same origin or
+valid CORS headers.
 
-| Option | Default | What it does |
-| --- | --- | --- |
-| `radius` | `16` | Corner radius, px (or a `"NN%"` string). |
-| `depth` | `14` | Refracting rim thickness, px. |
-| `scale` | `90` | Displacement strength, px. |
-| `blur` | `0.6` | Frost, px. |
-| `chroma` | `0.4` | Chromatic aberration, 0..1. |
-| `rimLight` | `0.6` | CSS bevel highlight, 0..1. |
-| `specular` | `0` | SVG-filter specular, 0..1. |
-| `tint` | `rgba(255,255,255,0.06)` | Glass tint. |
-| `shadow` | `0 8px 30px rgba(0,0,0,0.25)` | Drop shadow. |
-| `backdrop` | `null` | Explicit CSS background to refract (else `--lq-backdrop`, else body bg). |
-| `alignTo` | `null` | Element/ref/fn → refraction-target mode for moving lenses. |
+```tsx
+import {
+  GlassMedia,
+  GlassOverMedia,
+} from "@tomagranate/liquid-glass/react";
 
-Also exported for custom pipelines: `createGlassController`,
-`generateDisplacementMap`, `buildGlassFilter`, `moveFilterLens` (SVG), and
-`WebGLGlass` (the texture backend).
+export function Player() {
+  return (
+    <GlassMedia live className="player">
+      <video src="/coast.mp4" muted loop playsInline />
+      <GlassOverMedia as="button" radius="50%">
+        Play
+      </GlassOverMedia>
+    </GlassMedia>
+  );
+}
+```
 
-## How it works
+Set `live` for video or animated canvas. Leave it off for static images.
 
-The effect is a copy of the page backdrop, painted on its own layer and bent by a
-rounded-rectangle displacement map. The full write-up — the displacement map, the
-two backends, alignment, and the performance trade-offs — is in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+### Glass over known wallpaper
 
-## Develop
+Use this only when the CSS artwork is known and safe to paint again.
+
+```tsx
+import { GlassOverWallpaper } from "@tomagranate/liquid-glass/react";
+
+<GlassOverWallpaper wallpaper="url(/brand-art.webp)" radius={28}>
+  Brand card
+</GlassOverWallpaper>;
+```
+
+## Vanilla quick start
+
+```ts
+import {
+  createGlassMedia,
+  createGlassRegion,
+  glassOverMedia,
+  glassOverPage,
+  glassOverRegion,
+  glassOverWallpaper,
+} from "@tomagranate/liquid-glass";
+
+const pageGlass = glassOverPage(document.querySelector("nav")!);
+
+const region = createGlassRegion(document.querySelector(".chart")!);
+const regionGlass = glassOverRegion(document.querySelector(".chart-lens")!, {
+  region,
+  radius: 24,
+});
+
+const media = createGlassMedia(document.querySelector("video")!, {
+  live: true,
+});
+const mediaGlass = glassOverMedia(document.querySelector(".play")!, { media });
+
+const artGlass = glassOverWallpaper(
+  document.querySelector(".brand-card")!,
+  "url(/brand-art.webp)",
+);
+```
+
+Each function returns a `GlassHandle`:
+
+```ts
+handle.update({ tint: "rgba(255,255,255,.1)" });
+handle.geometryChanged();
+handle.refresh();
+handle.destroy();
+```
+
+Call `geometryChanged()` after JavaScript moves a lens. CSS transitions and
+normal scroll changes are tracked automatically.
+
+## React API
+
+| API | Purpose |
+| --- | --- |
+| `<GlassOverPage>` | Glass over arbitrary page content. |
+| `<GlassRegion>` | Mark a live DOM region as a source. |
+| `<GlassOverRegion>` | Glass over marked live DOM regions. |
+| `<GlassMedia>` | Register the first image, video, or canvas child. |
+| `<GlassOverMedia>` | Glass over registered media. |
+| `<GlassOverWallpaper wallpaper="…">` | Glass over known CSS artwork. |
+| `useGlassOverPage(ref, options)` | Attach page glass to an existing element. |
+| `useGlassRegion(ref, options)` | Register an existing DOM region. |
+| `useGlassOverRegion(ref, options)` | Attach region glass to an existing element. |
+| `useGlassMedia(ref, options)` | Register existing media. |
+| `useGlassOverMedia(ref, options)` | Attach media glass to an existing element. |
+| `useGlassOverWallpaper(ref, wallpaper, options)` | Attach wallpaper glass to an existing element. |
+| `<GlassRoot>` | Create an isolated scope with shared defaults and budgets. |
+| `useGlassDiagnostics()` | Read stable runtime counters and policy decisions. |
+
+All lens components accept normal DOM props and these material options:
+
+```ts
+type GlassAppearanceOptions = {
+  radius?: number | string;
+  depth?: number;
+  scale?: number;
+  blur?: number;
+  chroma?: number;
+  specular?: number;
+  specularAngle?: number;
+  dpr?: number;
+  tint?: string;
+  rimLight?: number;
+  shadow?: string;
+  preset?: "thin" | "regular" | "prominent";
+  quality?: "performance" | "balanced" | "fidelity";
+  fallback?: "blur" | "tint" | "none";
+  track?: "auto" | "live";
+  onBackendChange?: (backends: readonly GlassBackend[]) => void;
+};
+```
+
+## Vanilla API
+
+| API | Purpose |
+| --- | --- |
+| `glassOverPage(element, options?)` | Create page glass. |
+| `createGlassRegion(element, options?)` | Mark a live DOM region. |
+| `glassOverRegion(element, options?)` | Create region glass. |
+| `createGlassMedia(media, options?)` | Register image, video, or canvas media. |
+| `glassOverMedia(element, options?)` | Create media glass. |
+| `glassOverWallpaper(element, wallpaper, options?)` | Create wallpaper glass. |
+| `createGlassScope(options?)` | Create an isolated owner for sources and lenses. |
+| `setBackground(cssOrNull)` | Set known CSS artwork for the compatibility API. |
+
+`glass(element, options?)` remains as the automatic compatibility interface.
+It selects overlapping registered sources. It uses page glass when Chrome can
+support it. Otherwise, it uses frost. It does not copy an unmarked page.
+
+The old source names remain as deprecated aliases:
+
+| Deprecated | Replacement |
+| --- | --- |
+| `createSurface` | `createGlassRegion` |
+| `createMediaSurface` | `createGlassMedia` |
+| `<GlassSurface>` | `<GlassRegion>` |
+| `<GlassMediaSurface>` | `<GlassMedia>` |
+| `useSurface` | `useGlassRegion` |
+| `useMediaSurface` | `useGlassMedia` |
+
+## Quality and performance
+
+The runtime selects a backend for each lens. It also enforces aggregate area
+budgets. Large or dense effects reduce detail before they use a fallback.
+
+- `performance` uses less filter detail.
+- `balanced` is the default.
+- `fidelity` keeps more detail when the budget permits it.
+- `fallback="blur"` keeps a readable frosted material.
+- `fallback="tint"` keeps only the tint film.
+- `fallback="none"` removes the effect when refraction cannot run.
+
+Keep marked regions bounded. Pause media while it is off-screen. Prefer page
+glass when exact refraction is not required on Safari and Firefox.
+
+## Browser support
+
+| Interface | Chrome | Safari | Firefox |
+| --- | --- | --- | --- |
+| Page | Live compositor refraction | Native frost | Native frost |
+| Region | SVG refraction | SVG refraction within budget | SVG refraction within budget |
+| Media | WebGL2 | WebGL2 | WebGL2 |
+| Wallpaper | Painted copy | Painted copy within budget | Painted copy within budget |
+
+The native fallback keeps tint, edge light, radius, and shadow. It does not
+claim refraction where the browser cannot provide it.
+
+## Limits
+
+- A region lens cannot be inside the region that it refracts. Use overlapping
+  siblings.
+- Media needs WebGL2 and readable source pixels.
+- Region and wallpaper effects have stricter budgets on Safari and Firefox.
+- A transformed ancestor can change browser compositing behavior.
+- Very small elements skip refraction.
+
+## Development
 
 ```sh
 npm install
-npm run dev        # the showcase demo → http://localhost:5180
-npm run build      # build the package to dist/
-npm test           # vitest
-npm run lint       # biome
-npm run typecheck  # tsc --noEmit
+npm run dev
+npm run typecheck
+npm run lint
+npm run test:unit
+npm run test:browser
+npm run test:package
 ```
+
+Use `npm run test:demo:all` for the cross-browser demo tour.
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for backend details.
 
 ## License
 
-[MIT](LICENSE)
+MIT
