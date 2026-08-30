@@ -754,23 +754,27 @@ export function createGlassController(
     if (frameTime !== undefined) lastFrameTime = frameTime;
 
     const sampleTime = frameTime ?? currentTime();
-    const rect = opts.predict
+    const ref = opts.alignTo
+      ? typeof opts.alignTo === "function"
+        ? opts.alignTo()
+        : opts.alignTo
+      : null;
+    const refElement =
+      ref && "getBoundingClientRect" in ref ? (ref as Element) : null;
+    const predictPair = opts.predict && (!opts.alignTo || refElement !== null);
+    const rect = predictPair
       ? frameTime === undefined
         ? predictRect(host, sampleTime)
         : measurePredictedRect(host, sampleTime)
       : host.getBoundingClientRect();
 
     if (opts.alignTo) {
-      const ref =
-        typeof opts.alignTo === "function" ? opts.alignTo() : opts.alignTo;
-      const refElement =
-        ref && "getBoundingClientRect" in ref ? (ref as Element) : null;
       if (lastAlignElement && lastAlignElement !== refElement) {
         settle(lastAlignElement);
       }
       lastAlignElement = refElement;
       const a: DOMRect | null = refElement
-        ? opts.predict
+        ? predictPair
           ? frameTime === undefined
             ? predictRect(refElement, sampleTime)
             : measurePredictedRect(refElement, sampleTime)

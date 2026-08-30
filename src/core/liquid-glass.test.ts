@@ -148,6 +148,37 @@ describe("createGlassController", () => {
     ctrl.destroy();
   });
 
+  it("keeps raw rect alignment exact while the host moves", () => {
+    const { host, refraction, backdrop, sheen } = layers();
+    let hostLeft = 0;
+    let targetLeft = 20;
+    let time = 0;
+    const timeSpy = vi.spyOn(performance, "now").mockImplementation(() => time);
+    const canvasSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    const rectSpy = vi
+      .spyOn(host, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(hostLeft, 0, 100, 50));
+    const ctrl = createGlassController(
+      host,
+      { refraction, backdrop, sheen },
+      { alignTo: () => new DOMRect(targetLeft, 0, 40, 20) },
+    );
+
+    ctrl._reposition(true);
+    hostLeft = -10;
+    targetLeft = 10;
+    time = 16.7;
+    ctrl._reposition(true);
+
+    expect(backdrop.style.transform).toBe("translate(20px, 0px)");
+    ctrl.destroy();
+    canvasSpy.mockRestore();
+    rectSpy.mockRestore();
+    timeSpy.mockRestore();
+  });
+
   it("leads clone alignment and snaps exact after settle", () => {
     const { host, refraction, backdrop, sheen } = layers();
     let left = 0;
