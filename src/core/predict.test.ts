@@ -76,6 +76,17 @@ describe("predictRect", () => {
     expect(rect.top).toBe(-1_120);
   });
 
+  it("seeds frame duration from the first observed interval", () => {
+    recordAnimationFrame(0);
+    recordAnimationFrame(8);
+
+    const target = movingElement();
+    predictRect(target.element, 8);
+    target.move(8);
+
+    expect(predictRect(target.element, 16).left).toBe(16);
+  });
+
   it("ignores idle gaps when estimating frame duration", () => {
     for (let timestamp = 0; timestamp <= 400; timestamp += 10) {
       recordAnimationFrame(timestamp);

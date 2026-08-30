@@ -15,6 +15,7 @@ const last = new WeakMap<Element, Sample>();
 let frameMs = 16.7;
 let lead = 1;
 let lastFrameTime: number | null = null;
+let hasFrameDelta = false;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -49,7 +50,12 @@ export function recordAnimationFrame(timestamp: number): void {
     // A long gap is idle time or a blocked main thread, not a display frame.
     if (delta <= MAX_FRAME_MS) {
       const frameDelta = Math.max(delta, MIN_FRAME_MS);
-      frameMs += (frameDelta - frameMs) * FRAME_EMA_WEIGHT;
+      if (hasFrameDelta) {
+        frameMs += (frameDelta - frameMs) * FRAME_EMA_WEIGHT;
+      } else {
+        frameMs = frameDelta;
+        hasFrameDelta = true;
+      }
     }
   }
   lastFrameTime = timestamp;
