@@ -179,6 +179,56 @@ describe("createGlassController", () => {
     timeSpy.mockRestore();
   });
 
+  it("resets host prediction when the alignment target changes", () => {
+    const { host, refraction, backdrop, sheen } = layers();
+    const targetA = document.createElement("div");
+    const targetB = document.createElement("div");
+    document.body.append(targetA, targetB);
+    let hostLeft = 0;
+    let targetALeft = 20;
+    let targetBLeft = 20;
+    let target = targetA;
+    let time = 0;
+    const timeSpy = vi.spyOn(performance, "now").mockImplementation(() => time);
+    const canvasSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    const hostRectSpy = vi
+      .spyOn(host, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(hostLeft, 0, 100, 50));
+    const targetARectSpy = vi
+      .spyOn(targetA, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(targetALeft, 0, 40, 20));
+    const targetBRectSpy = vi
+      .spyOn(targetB, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(targetBLeft, 0, 40, 20));
+    const ctrl = createGlassController(
+      host,
+      { refraction, backdrop, sheen },
+      { alignTo: () => target },
+    );
+
+    hostLeft = -10;
+    targetALeft = 10;
+    targetBLeft = 10;
+    time = 16.7;
+    ctrl._reposition(true);
+
+    target = targetB;
+    hostLeft = -20;
+    targetBLeft = 0;
+    time = 33.4;
+    ctrl._reposition(true);
+
+    expect(backdrop.style.transform).toBe("translate(20px, 0px)");
+    ctrl.destroy();
+    canvasSpy.mockRestore();
+    hostRectSpy.mockRestore();
+    targetARectSpy.mockRestore();
+    targetBRectSpy.mockRestore();
+    timeSpy.mockRestore();
+  });
+
   it("leads clone alignment and snaps exact after settle", () => {
     const { host, refraction, backdrop, sheen } = layers();
     let left = 0;

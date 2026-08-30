@@ -761,6 +761,11 @@ export function createGlassController(
       : null;
     const refElement =
       ref && "getBoundingClientRect" in ref ? (ref as Element) : null;
+    if (opts.alignTo && lastAlignElement !== refElement) {
+      if (lastAlignElement) settle(lastAlignElement);
+      settle(host);
+      lastAlignElement = refElement;
+    }
     const predictPair = opts.predict && (!opts.alignTo || refElement !== null);
     const rect = predictPair
       ? frameTime === undefined
@@ -769,10 +774,6 @@ export function createGlassController(
       : host.getBoundingClientRect();
 
     if (opts.alignTo) {
-      if (lastAlignElement && lastAlignElement !== refElement) {
-        settle(lastAlignElement);
-      }
-      lastAlignElement = refElement;
       const a: DOMRect | null = refElement
         ? predictPair
           ? frameTime === undefined
