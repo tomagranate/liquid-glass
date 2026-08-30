@@ -4,7 +4,9 @@ import {
   buildGlassFilter,
   createGlassController,
   generateDisplacementMap,
+  onGlassFlush,
 } from "./liquid-glass.js";
+import { settle } from "./predict.js";
 
 function countByName(el: Element, name: string): number {
   return Array.from(el.querySelectorAll("*")).filter(
@@ -68,6 +70,76 @@ describe("buildGlassFilter", () => {
   });
 });
 
+describe("onGlassFlush", () => {
+  it("binds scroll handling without a glass controller", () => {
+    let scheduled: FrameRequestCallback | undefined;
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        scheduled = callback;
+        return 1;
+      });
+    const listener = vi.fn();
+    const unsubscribe = onGlassFlush(listener);
+
+    window.dispatchEvent(new Event("scroll"));
+    expect(scheduled).toBeTypeOf("function");
+    scheduled?.(16.7);
+    expect(listener).toHaveBeenCalledWith(false, expect.any(Function));
+
+    unsubscribe();
+    window.dispatchEvent(new Event("scrollend"));
+    rafSpy.mockRestore();
+  });
+
+  it("invalidates predicted rects before the settle flush", () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      });
+    const element = document.createElement("div");
+    let left = 0;
+    element.getBoundingClientRect = () => new DOMRect(left, 0, 40, 20);
+    const samples: number[] = [];
+    const unsubscribe = onGlassFlush((settling, measure) => {
+      if (settling) settle(element);
+      samples.push(measure(element).left);
+    });
+    const runNextFrame = (timestamp: number) => {
+      const callback = callbacks.shift();
+      if (!callback) throw new Error("Missing animation frame");
+      callback(timestamp);
+    };
+
+    window.dispatchEvent(new Event("scroll"));
+    runNextFrame(1_000);
+    left = 10;
+    window.dispatchEvent(new Event("scroll"));
+    runNextFrame(1_010);
+    runNextFrame(1_010);
+    runNextFrame(1_010);
+
+    expect(samples).toEqual([0, 20, 10]);
+
+    left = 20;
+    window.dispatchEvent(new Event("scroll"));
+    runNextFrame(1_043);
+    left = 28;
+    window.dispatchEvent(new Event("scroll"));
+    runNextFrame(1_051);
+    runNextFrame(1_051);
+
+    expect(samples[samples.length - 1]).toBe(36);
+
+    unsubscribe();
+    window.dispatchEvent(new Event("scrollend"));
+    rafSpy.mockRestore();
+  });
+});
+
 describe("createGlassController", () => {
   // jsdom lacks ResizeObserver and a real rAF; stub them so the controller can
   // wire up without scheduling a live ticker.
@@ -121,6 +193,142 @@ describe("createGlassController", () => {
     ctrl._reposition(true);
     expect(backdrop.style.width).toBe("0px");
     ctrl.destroy();
+  });
+
+  it("keeps raw rect alignment exact while the host moves", () => {
+    const { host, refraction, backdrop, sheen } = layers();
+    let hostLeft = 0;
+    let targetLeft = 20;
+    let time = 0;
+    const timeSpy = vi.spyOn(performance, "now").mockImplementation(() => time);
+    const canvasSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    const rectSpy = vi
+      .spyOn(host, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(hostLeft, 0, 100, 50));
+    const ctrl = createGlassController(
+      host,
+      { refraction, backdrop, sheen },
+      { alignTo: () => new DOMRect(targetLeft, 0, 40, 20) },
+    );
+
+    ctrl._reposition(true);
+    hostLeft = -10;
+    targetLeft = 10;
+    time = 16.7;
+    ctrl._reposition(true);
+
+    expect(backdrop.style.transform).toBe("translate(20px, 0px)");
+    ctrl.destroy();
+    canvasSpy.mockRestore();
+    rectSpy.mockRestore();
+    timeSpy.mockRestore();
+  });
+
+  it("resets host prediction when the alignment target changes", () => {
+    const { host, refraction, backdrop, sheen } = layers();
+    const targetA = document.createElement("div");
+    const targetB = document.createElement("div");
+    document.body.append(targetA, targetB);
+    let hostLeft = 0;
+    let targetALeft = 20;
+    let targetBLeft = 20;
+    let target = targetA;
+    let time = 0;
+    const timeSpy = vi.spyOn(performance, "now").mockImplementation(() => time);
+    const canvasSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    const hostRectSpy = vi
+      .spyOn(host, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(hostLeft, 0, 100, 50));
+    const targetARectSpy = vi
+      .spyOn(targetA, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(targetALeft, 0, 40, 20));
+    const targetBRectSpy = vi
+      .spyOn(targetB, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(targetBLeft, 0, 40, 20));
+    const ctrl = createGlassController(
+      host,
+      { refraction, backdrop, sheen },
+      { alignTo: () => target },
+    );
+
+    hostLeft = -10;
+    targetALeft = 10;
+    targetBLeft = 10;
+    time = 16.7;
+    ctrl._reposition(true);
+
+    target = targetB;
+    hostLeft = -20;
+    targetBLeft = 0;
+    time = 33.4;
+    ctrl._reposition(true);
+
+    expect(backdrop.style.transform).toBe("translate(20px, 0px)");
+    ctrl.destroy();
+    canvasSpy.mockRestore();
+    hostRectSpy.mockRestore();
+    targetARectSpy.mockRestore();
+    targetBRectSpy.mockRestore();
+    timeSpy.mockRestore();
+  });
+
+  it("leads clone alignment and snaps exact after settle", () => {
+    const { host, refraction, backdrop, sheen } = layers();
+    let left = 0;
+    let time = 0;
+    const timeSpy = vi.spyOn(performance, "now").mockImplementation(() => time);
+    const canvasSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    const rectSpy = vi
+      .spyOn(host, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(left, 0, 100, 50));
+
+    const ctrl = createGlassController(host, { refraction, backdrop, sheen });
+    ctrl._reposition(true);
+    left = 10;
+    time = 16.7;
+    ctrl._reposition(true);
+
+    expect(backdrop.style.backgroundPosition).toContain("calc(110px");
+
+    settle(host);
+    time = 33.4;
+    ctrl._reposition(true);
+    expect(backdrop.style.backgroundPosition).toContain("calc(120px");
+    ctrl.destroy();
+    canvasSpy.mockRestore();
+    rectSpy.mockRestore();
+    timeSpy.mockRestore();
+  });
+
+  it("keeps clone alignment exact when prediction is off", () => {
+    const { host, refraction, backdrop, sheen } = layers();
+    let left = 0;
+    const canvasSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    const rectSpy = vi
+      .spyOn(host, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(left, 0, 100, 50));
+
+    const ctrl = createGlassController(
+      host,
+      { refraction, backdrop, sheen },
+      { predict: false },
+    );
+    ctrl._reposition(true);
+    left = 10;
+    ctrl._reposition(true);
+
+    expect(backdrop.style.backgroundPosition).toContain("calc(120px");
+    ctrl.destroy();
+    canvasSpy.mockRestore();
+    rectSpy.mockRestore();
   });
 });
 

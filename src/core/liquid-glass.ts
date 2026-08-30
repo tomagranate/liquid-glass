@@ -15,10 +15,17 @@
  * The displacement map is a small PNG (R/G = x/y bend, B = specular) encoding a
  * rounded-rectangle SDF: bending concentrated in a rim of thickness `depth`,
  * fading to a clear centre. It's regenerated only on shape change; moving the
- * lens just shifts the backdrop copy.
+ * lens just shifts the backdrop copy. Scroll work is coalesced into one rAF
+ * flush. A short watchdog then clears velocity and snaps each copy into place.
  */
 
 import "./liquid-glass.css";
+import {
+  predictRect,
+  recordAnimationFrame,
+  resetAnimationFrameTiming,
+  settle,
+} from "./predict.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -387,13 +394,69 @@ export function moveFilterLens(
    a `getBoundingClientRect` (a forced layout read) per frame. With several glass
    elements present that continuous churn made Safari's pre-click compositing
    flush slow enough to noticeably delay click handling. So clone-mode
-   controllers stay off the rAF entirely and ride scroll/resize instead; only
-   `alignTo` controllers are ticked. */
-const _all = new Set<GlassController>();
-const _live = new Set<GlassController>();
+   controllers stay off the perpetual rAF and ride a same-turn scroll flush.
+   A one-frame watchdog snaps copies exact after scrolling stops. Only `alignTo`
+   controllers stay on the shared ticker. */
+interface InternalGlassController extends GlassController {
+  _reposition(force?: boolean, frameTime?: number): void;
+  _settle(): void;
+}
+
+export type GlassRectMeasure = (element: Element) => DOMRect;
+export type GlassFlushListener = (
+  settling: boolean,
+  measure: GlassRectMeasure,
+) => void;
+
+const _all = new Set<InternalGlassController>();
+const _live = new Set<InternalGlassController>();
+const _dirty = new Set<InternalGlassController>();
+const _flushListeners = new Set<GlassFlushListener>();
 let _raf = 0;
-function tickLive(): void {
-  for (const c of _live) c._reposition();
+let _scrollRaf = 0;
+let _settleRaf = 0;
+let _scrollGeneration = 0;
+let _measureFrame = Number.NaN;
+let _measuredRects = new WeakMap<Element, DOMRect>();
+
+function currentTime(): number {
+  if (typeof performance !== "undefined") return performance.now();
+  return Date.now();
+}
+
+function clearMeasuredRects(): void {
+  _measureFrame = Number.NaN;
+  _measuredRects = new WeakMap<Element, DOMRect>();
+}
+
+function measurePredictedRect(element: Element, timestamp: number): DOMRect {
+  if (timestamp !== _measureFrame) {
+    clearMeasuredRects();
+    _measureFrame = timestamp;
+  }
+  const cached = _measuredRects.get(element);
+  if (cached) return cached;
+  const rect = predictRect(element, timestamp);
+  _measuredRects.set(element, rect);
+  return rect;
+}
+
+function emitGlassFlush(settling: boolean, timestamp: number): void {
+  const measure = (element: Element) =>
+    measurePredictedRect(element, timestamp);
+  for (const listener of _flushListeners) listener(settling, measure);
+}
+
+/** Run `listener` with each coalesced scroll flush and final settle flush. */
+export function onGlassFlush(listener: GlassFlushListener): () => void {
+  _flushListeners.add(listener);
+  bindScroll();
+  return () => _flushListeners.delete(listener);
+}
+
+function tickLive(timestamp: number): void {
+  recordAnimationFrame(timestamp);
+  for (const c of _live) c._reposition(false, timestamp);
   _raf = _live.size ? requestAnimationFrame(tickLive) : 0;
 }
 function startLive(): void {
@@ -403,13 +466,61 @@ let _scrollBound = false;
 function repositionAll(): void {
   for (const c of _all) c._reposition();
 }
+
+function settleAll(timestamp = currentTime()): void {
+  clearMeasuredRects();
+  for (const c of _all) {
+    c._settle();
+    c._reposition(true, timestamp);
+  }
+  emitGlassFlush(true, timestamp);
+  resetAnimationFrameTiming();
+}
+
+function finishScroll(): void {
+  if (_scrollRaf) cancelAnimationFrame(_scrollRaf);
+  if (_settleRaf) cancelAnimationFrame(_settleRaf);
+  _scrollRaf = 0;
+  _settleRaf = 0;
+  _dirty.clear();
+  settleAll();
+}
+
+function flushScroll(timestamp: number): void {
+  _scrollRaf = 0;
+  recordAnimationFrame(timestamp);
+  for (const c of _dirty) c._reposition(false, timestamp);
+  _dirty.clear();
+  emitGlassFlush(false, timestamp);
+
+  if (_settleRaf) cancelAnimationFrame(_settleRaf);
+  const generation = _scrollGeneration;
+  _settleRaf = requestAnimationFrame((nextTimestamp) => {
+    _settleRaf = 0;
+    recordAnimationFrame(nextTimestamp);
+    if (generation === _scrollGeneration) settleAll(nextTimestamp);
+  });
+}
+
+function scheduleScrollFlush(): void {
+  _scrollGeneration += 1;
+  for (const c of _all) _dirty.add(c);
+  if (!_scrollRaf) _scrollRaf = requestAnimationFrame(flushScroll);
+}
+
+function handleResize(): void {
+  for (const c of _all) c._settle();
+  repositionAll();
+}
+
 function bindScroll(): void {
   if (_scrollBound || typeof window === "undefined") return;
-  window.addEventListener("scroll", repositionAll, {
+  window.addEventListener("scroll", scheduleScrollFlush, {
     passive: true,
     capture: true,
   });
-  window.addEventListener("resize", repositionAll);
+  window.addEventListener("scrollend", finishScroll, { passive: true });
+  window.addEventListener("resize", handleResize);
   _scrollBound = true;
 }
 
@@ -443,6 +554,8 @@ export interface GlassOptions {
   backdrop?: string | null;
   /** when set, switches to refraction-target mode (see file docs) */
   alignTo?: AlignTo;
+  /** lead moving backdrop copies by one frame to hide compositor lag */
+  predict?: boolean;
 }
 
 export interface GlassLayers {
@@ -481,6 +594,7 @@ const DEFAULTS: ResolvedOptions = {
   shadow: "0 8px 30px rgba(0,0,0,0.25)",
   backdrop: null,
   alignTo: null,
+  predict: true,
 };
 
 function resolveBackdrop(backdrop: string | null): string {
@@ -514,14 +628,18 @@ export function createGlassController(
   let lastTop = Number.NaN;
   let lastBW = Number.NaN;
   let lastBH = Number.NaN;
+  let lastRectLeft = Number.NaN;
+  let lastRectTop = Number.NaN;
+  let lastFrameTime = Number.NaN;
+  let lastAlignElement: Element | null = null;
   // Cache the displacement map (a canvas → PNG, the expensive part) so changes
   // that don't affect geometry can reuse it.
   let cachedMapUrl: string | null = null;
   let mapSig = "";
 
   /** Signature of every option that requires rebuilding the map or the filter.
-   *  CSS-only props (backdrop, tint, rimLight, shadow) are deliberately absent,
-   *  so colour/opacity changes skip the costly regenerate entirely. */
+   *  CSS-only props (backdrop, tint, rimLight, shadow, predict) are absent, so
+   *  colour, opacity, and alignment changes skip the costly regenerate. */
   const rebuildSig = (): string =>
     [
       opts.radius,
@@ -633,19 +751,48 @@ export function createGlassController(
 
     lastW = w;
     lastH = h;
+    settleTracked();
     _reposition(true);
   }
 
-  function _reposition(force?: boolean): void {
-    const rect = host.getBoundingClientRect();
+  function settleTracked(): void {
+    settle(host);
+    if (lastAlignElement) settle(lastAlignElement);
+  }
+
+  function _reposition(force?: boolean, frameTime?: number): void {
+    if (!force && frameTime !== undefined && frameTime === lastFrameTime)
+      return;
+    if (frameTime !== undefined) lastFrameTime = frameTime;
+
+    const sampleTime = frameTime ?? currentTime();
+    const ref = opts.alignTo
+      ? typeof opts.alignTo === "function"
+        ? opts.alignTo()
+        : opts.alignTo
+      : null;
+    const refElement =
+      ref && "getBoundingClientRect" in ref ? (ref as Element) : null;
+    if (opts.alignTo && lastAlignElement !== refElement) {
+      if (lastAlignElement) settle(lastAlignElement);
+      settle(host);
+      lastAlignElement = refElement;
+    }
+    const predictPair = opts.predict && (!opts.alignTo || refElement !== null);
+    const rect = predictPair
+      ? frameTime === undefined
+        ? predictRect(host, sampleTime)
+        : measurePredictedRect(host, sampleTime)
+      : host.getBoundingClientRect();
 
     if (opts.alignTo) {
-      const ref =
-        typeof opts.alignTo === "function" ? opts.alignTo() : opts.alignTo;
-      const a =
-        ref && "getBoundingClientRect" in ref
-          ? ref.getBoundingClientRect()
-          : ref;
+      const a: DOMRect | null = refElement
+        ? predictPair
+          ? frameTime === undefined
+            ? predictRect(refElement, sampleTime)
+            : measurePredictedRect(refElement, sampleTime)
+          : refElement.getBoundingClientRect()
+        : (ref as DOMRect | null);
       if (!a) return;
       const left = a.left - rect.left;
       const top = a.top - rect.top;
@@ -675,6 +822,16 @@ export function createGlassController(
     const width = rect.width + 2 * mx;
     const height = rect.height + 2 * my;
     if (!opts.backdrop) {
+      if (
+        !force &&
+        rect.left === lastRectLeft &&
+        rect.top === lastRectTop &&
+        width === lastBW &&
+        height === lastBH
+      )
+        return;
+      lastRectLeft = rect.left;
+      lastRectTop = rect.top;
       // Slice the viewport-anchored page background to this box's screen
       // position, including the same cover-fit offset used by the real page.
       // (For an explicit local-fill backdrop, the fill already covers the box.)
@@ -719,10 +876,12 @@ export function createGlassController(
     }
   }
 
-  const ctrl: GlassController = {
+  const ctrl: InternalGlassController = {
+    _settle: settleTracked,
     _reposition,
     update(patch: GlassOptions) {
       const prevSig = rebuildSig();
+      if ("alignTo" in patch || patch.predict === false) settleTracked();
       Object.assign(opts, patch);
       applyStatic();
       // Rebuild the map/filter only when a prop that affects them changed.
@@ -736,10 +895,12 @@ export function createGlassController(
     destroy() {
       _all.delete(ctrl);
       _live.delete(ctrl);
+      _dirty.delete(ctrl);
       if (!_live.size && _raf) {
         cancelAnimationFrame(_raf);
         _raf = 0;
       }
+      settleTracked();
       ro.disconnect();
       if (filterEl) filterEl.remove();
       refraction.style.filter = "";

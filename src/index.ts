@@ -32,6 +32,7 @@ export {
   generateDisplacementMap,
   buildGlassFilter,
   moveFilterLens,
+  onGlassFlush,
 } from "./core/liquid-glass.js";
 export type {
   GlassOptions,
@@ -40,7 +41,16 @@ export type {
   AlignTo,
   DisplacementMapOptions,
   GlassFilterOptions,
+  GlassFlushListener,
+  GlassRectMeasure,
 } from "./core/liquid-glass.js";
+export {
+  getPredictionLead,
+  predictRect,
+  recordAnimationFrame,
+  setPredictionLead,
+  settle,
+} from "./core/predict.js";
 
 // ── Core: WebGL texture backend (canvas / video) ────────────────────────────
 export { WebGLGlass } from "./core/liquid-glass-webgl.js";

@@ -42,6 +42,13 @@ function canCreateWebGLGlass(): boolean {
   }
 }
 
+function backgroundPositionY(backdrop: HTMLElement): number {
+  const values = Array.from(
+    backdrop.style.backgroundPosition.matchAll(/calc\((-?[\d.]+)px/g),
+  );
+  return Number(values[1]?.[1]);
+}
+
 describe("browser SVG rendering", () => {
   it("attaches a real SVG filter and generates a PNG displacement map", () => {
     const host = document.createElement("div");
@@ -72,6 +79,57 @@ describe("browser SVG rendering", () => {
 
     ctrl.destroy();
     host.remove();
+  });
+
+  it("leads clone alignment while scrolling and settles exact", async () => {
+    const suppressScrollEnd = (event: Event) =>
+      event.stopImmediatePropagation();
+    window.addEventListener("scrollend", suppressScrollEnd, { capture: true });
+    document.body.style.minHeight = "2400px";
+    document.body.style.backgroundImage =
+      "linear-gradient(180deg, rgb(20, 40, 80), rgb(80, 40, 20))";
+    const host = document.createElement("div");
+    host.style.width = "120px";
+    host.style.height = "80px";
+    host.style.marginTop = "240px";
+    document.body.appendChild(host);
+    const ctrl = applyGlass(host);
+    const backdrop = host.querySelector<HTMLElement>(".lq-backdrop");
+    if (!backdrop) throw new Error("Missing backdrop");
+
+    const stepPx = 18;
+    await new Promise<void>((resolve) => {
+      let steps = 0;
+      const step = () => {
+        window.scrollBy(0, stepPx);
+        window.dispatchEvent(new Event("scroll"));
+        steps += 1;
+        if (steps < 6) requestAnimationFrame(step);
+        else requestAnimationFrame(() => resolve());
+      };
+      requestAnimationFrame(step);
+    });
+
+    const margin = Math.ceil(0.4 * host.getBoundingClientRect().height + 90);
+    const exact = margin - host.getBoundingClientRect().top;
+    const lead = backgroundPositionY(backdrop) - exact;
+    expect(Math.abs(lead - stepPx)).toBeLessThanOrEqual(2);
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    const settledExact = margin - host.getBoundingClientRect().top;
+    expect(backgroundPositionY(backdrop)).toBeCloseTo(settledExact, 1);
+
+    ctrl.destroy();
+    host.remove();
+    window.removeEventListener("scrollend", suppressScrollEnd, {
+      capture: true,
+    });
+    document.body.style.minHeight = "";
+    document.body.style.backgroundImage = "";
+    window.scrollTo(0, 0);
   });
 });
 

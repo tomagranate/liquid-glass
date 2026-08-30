@@ -27,7 +27,13 @@ import {
   ChatBubbleOvalLeftEllipsisIcon,
   EnvelopeIcon,
 } from "@heroicons/react/24/solid";
-import { useGlass } from "@tomagranate/liquid-glass";
+import {
+  onGlassFlush,
+  predictRect,
+  setPredictionLead,
+  settle,
+  useGlass,
+} from "@tomagranate/liquid-glass";
 import { GlassCopyContext } from "./glass/flat.ts";
 import { useCopyWallpaper } from "./glass/useCopyWallpaper.ts";
 import {
@@ -94,7 +100,13 @@ export default function App() {
     blur: 0.4,
     specular: 0.4,
     rimLight: 0.9,
+    predict: true,
+    lead: 1,
   });
+
+  useLayoutEffect(() => {
+    setPredictionLead(tune.lead);
+  }, [tune.lead]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30_000);
@@ -158,6 +170,9 @@ export default function App() {
   return (
     // Remount on wallpaper change so every controller re-reads the backdrop.
     <div key={wallpaper.id}>
+      {new URLSearchParams(window.location.search).has("diag") ? (
+        <ScrollDiagnostic predict={tune.predict} />
+      ) : null}
       <Nav alignTo={alignToPage} copy={pageCopy} />
       <div ref={pageRef}>
         <main>
@@ -613,7 +628,8 @@ function PlaygroundScene({ tune, setTune }) {
     <section className="scene shell" id={flat ? undefined : "playground"}>
       <SceneHeader index="06" title="Mix your own material.">
         Displacement, rim depth, chromatic aberration, frost, and rim light are
-        all parameters. Tune the specimen, then ship the numbers you like.
+        all parameters. Tune the material and its scroll prediction, then ship
+        the numbers you like.
       </SceneHeader>
       <div className="stage playground">
         <div className="specimen-stage">
@@ -676,6 +692,20 @@ function PlaygroundScene({ tune, setTune }) {
             step={0.01}
             onChange={set("rimLight")}
           />
+          <Toggle
+            label="Scroll prediction"
+            checked={tune.predict}
+            onChange={set("predict")}
+          />
+          <Range
+            label="Prediction lead"
+            value={tune.lead}
+            display={tune.lead.toFixed(1)}
+            min={0}
+            max={2}
+            step={0.1}
+            onChange={set("lead")}
+          />
         </GlassPanel>
       </div>
     </section>
@@ -695,7 +725,8 @@ function Specimen({ tune }) {
 }
 
 function SpecimenImpl({ tune }) {
-  const g = useGlass({ radius: 32, ...tune });
+  const { lead: _lead, ...glassTune } = tune;
+  const g = useGlass({ radius: 32, ...glassTune });
   return (
     <div ref={g.hostRef} className="specimen lq">
       <div ref={g.refractionRef} className="lq-refraction">
@@ -708,6 +739,7 @@ function SpecimenImpl({ tune }) {
 }
 
 function Range({ label, display, onChange, ...rest }) {
+  const name = label.toLowerCase().replaceAll(" ", "-");
   return (
     <label className="range">
       <span className="range-top">
@@ -715,11 +747,67 @@ function Range({ label, display, onChange, ...rest }) {
         <code>{display}</code>
       </span>
       <input
+        name={name}
         type="range"
         {...rest}
         onChange={(e) => onChange(parseFloat(e.target.value))}
       />
     </label>
+  );
+}
+
+function Toggle({ label, checked, onChange }) {
+  const name = label.toLowerCase().replaceAll(" ", "-");
+  return (
+    <label className="toggle-control">
+      <span className="range-top">
+        {label}
+        <code>{checked ? "on" : "off"}</code>
+      </span>
+      <input
+        name={name}
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+    </label>
+  );
+}
+
+/** Compare a native page marker with the same marker positioned from JS. */
+function ScrollDiagnostic({ predict }) {
+  const nativeRef = useRef(null);
+  const copyRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const native = nativeRef.current;
+    const copy = copyRef.current;
+    if (!native || !copy) return;
+
+    const align = (settling = false, measure = predictRect) => {
+      native.style.height = `${document.documentElement.scrollHeight}px`;
+      if (settling || !predict) settle(native);
+      const rect = predict ? measure(native) : native.getBoundingClientRect();
+      copy.style.height = `${rect.height}px`;
+      copy.style.transform = `translate3d(${rect.left}px, ${rect.top}px, 0)`;
+    };
+    const resize = () => align(true);
+    resize();
+    const unsubscribe = onGlassFlush(align);
+    window.addEventListener("resize", resize);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("resize", resize);
+      settle(native);
+    };
+  }, [predict]);
+
+  return (
+    <div className="scroll-diagnostic" aria-hidden="true">
+      <div ref={nativeRef} className="scroll-diagnostic-native" />
+      <div ref={copyRef} className="scroll-diagnostic-copy" />
+      <p>diag · prediction {predict ? "on" : "off"}</p>
+    </div>
   );
 }
 

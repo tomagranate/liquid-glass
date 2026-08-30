@@ -9,6 +9,9 @@ import {
   buildGlassFilter,
   generateDisplacementMap,
   moveFilterLens,
+  onGlassFlush,
+  predictRect,
+  settle,
 } from "@tomagranate/liquid-glass";
 import { GlassCopyContext } from "./flat.ts";
 import "./components.css";
@@ -198,8 +201,9 @@ function ToggleGroupImpl({
     // background-size/position, so it still reads as the real page showing
     // through — without handing the filter a viewport-sized source graphic.
     const M = BACKDROP_MARGIN;
-    const align = () => {
-      const r = surface.getBoundingClientRect();
+    const align = (settling = false, measure = predictRect) => {
+      if (settling) settle(surface);
+      const r = measure(surface);
       backdrop.style.width = `${r.width + 2 * M}px`;
       backdrop.style.height = `${r.height + 2 * M}px`;
       backdrop.style.transform = `translate(${-M}px, ${-M}px)`;
@@ -207,14 +211,16 @@ function ToggleGroupImpl({
         "var(--lq-cover-width, 100vw) var(--lq-cover-height, 100vh)";
       backdrop.style.backgroundPosition = `calc(${M - r.left}px + var(--lq-cover-x, 0px)) calc(${M - r.top}px + var(--lq-cover-y, 0px))`;
     };
-    align();
-    window.addEventListener("scroll", align, { passive: true });
-    window.addEventListener("resize", align);
+    const resize = () => align(true);
+    resize();
+    const unsubscribe = onGlassFlush(align);
+    window.addEventListener("resize", resize);
 
     mountedRef.current = true;
     return () => {
-      window.removeEventListener("scroll", align);
-      window.removeEventListener("resize", align);
+      unsubscribe();
+      window.removeEventListener("resize", resize);
+      settle(surface);
       cancelAnimationFrame(rafRef.current);
       filter.remove();
       filterRef.current = null;
