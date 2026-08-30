@@ -127,4 +127,28 @@ describe("useGlass", () => {
       root.unmount();
     });
   });
+
+  it("restores the prediction default when the option is removed", async () => {
+    const target = document.createElement("button");
+    const container = document.createElement("div");
+    document.body.append(target, container);
+    const root: Root = createRoot(container);
+
+    await act(async () => {
+      root.render(<GlassFixture alignTo={target} predict={false} />);
+    });
+    controller.update.mockClear();
+
+    await act(async () => {
+      root.render(<GlassFixture alignTo={target} />);
+    });
+
+    expect(controller.update).toHaveBeenCalledWith(
+      expect.objectContaining({ predict: true }),
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
 });
