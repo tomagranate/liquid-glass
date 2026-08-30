@@ -24,8 +24,8 @@ export interface UseGlassResult<H extends HTMLElement = HTMLDivElement> {
   controllerRef: MutableRefObject<GlassController | null>;
 }
 
-/* Material props that, when changed, trigger a controller re-render. `backdrop`
-   is passed through but only string values are part of the key. `alignTo` is an
+/* Material and alignment props that trigger a controller update. `backdrop` is
+   passed through but only string values are part of the key. `alignTo` is an
    element/function and is tracked separately by identity below. */
 function materialKey(o: GlassOptions): string {
   return JSON.stringify([
@@ -40,6 +40,7 @@ function materialKey(o: GlassOptions): string {
     o.tint,
     o.rimLight,
     o.shadow,
+    o.predict,
     typeof o.backdrop === "string" ? o.backdrop : null,
   ]);
 }

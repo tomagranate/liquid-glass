@@ -3,7 +3,11 @@ import {
   applyGlass,
   buildGlassFilter,
   createGlassController,
+  getPredictionLead,
   generateDisplacementMap,
+  predictRect,
+  setPredictionLead,
+  settle,
   useGlass,
   useGlassTexture,
   WebGLGlass,
@@ -20,6 +24,10 @@ describe("public API", () => {
     expect(createGlassController).toBeTypeOf("function");
     expect(generateDisplacementMap).toBeTypeOf("function");
     expect(buildGlassFilter).toBeTypeOf("function");
+    expect(predictRect).toBeTypeOf("function");
+    expect(settle).toBeTypeOf("function");
+    expect(setPredictionLead).toBeTypeOf("function");
+    expect(getPredictionLead).toBeTypeOf("function");
   });
 
   it("exports the WebGL texture backend", () => {

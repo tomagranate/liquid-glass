@@ -89,10 +89,11 @@ pre-styled widgets.
 | `shadow` | `0 8px 30px rgba(0,0,0,0.25)` | Drop shadow. |
 | `backdrop` | `null` | Explicit CSS background to refract (else `--lq-backdrop`, else body bg). |
 | `alignTo` | `null` | Element/ref/fn → refraction-target mode for moving lenses. |
+| `predict` | `true` | Lead the backdrop copy by one frame of scroll velocity to hide compositor lag. |
 
 Also exported for custom pipelines: `createGlassController`,
-`generateDisplacementMap`, `buildGlassFilter`, `moveFilterLens` (SVG), and
-`WebGLGlass` (the texture backend).
+`generateDisplacementMap`, `buildGlassFilter`, `moveFilterLens`, `predictRect`,
+`settle`, `setPredictionLead` (SVG), and `WebGLGlass` (the texture backend).
 
 ## How it works
 

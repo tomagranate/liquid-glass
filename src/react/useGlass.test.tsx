@@ -23,8 +23,14 @@ vi.mock("../core/liquid-glass.js", () => ({
   createGlassController: controller.create,
 }));
 
-function GlassFixture({ alignTo }: { alignTo: HTMLElement }) {
-  const glass = useGlass({ radius: 16, alignTo });
+function GlassFixture({
+  alignTo,
+  predict,
+}: {
+  alignTo: HTMLElement;
+  predict?: boolean;
+}) {
+  const glass = useGlass({ radius: 16, alignTo, predict });
 
   return (
     <div ref={glass.hostRef}>
@@ -96,5 +102,29 @@ describe("useGlass", () => {
       root.unmount();
     });
     expect(controller.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("updates the controller when prediction changes", async () => {
+    const target = document.createElement("button");
+    const container = document.createElement("div");
+    document.body.append(target, container);
+    const root: Root = createRoot(container);
+
+    await act(async () => {
+      root.render(<GlassFixture alignTo={target} predict={true} />);
+    });
+    controller.update.mockClear();
+
+    await act(async () => {
+      root.render(<GlassFixture alignTo={target} predict={false} />);
+    });
+
+    expect(controller.update).toHaveBeenCalledWith(
+      expect.objectContaining({ predict: false }),
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
   });
 });

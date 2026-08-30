@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
 } from "react";
+import { onGlassFlush, predictRect, settle } from "@tomagranate/liquid-glass";
 import { GlassCopyContext } from "./flat.ts";
 import "./components.css";
 
@@ -417,8 +418,11 @@ function ShockwaveImpl() {
     };
     motionQuery.addEventListener("change", updateMotion);
 
-    const drawSource = () => {
-      const { width, height, dpr } = dimsRef.current;
+    const drawSource = (stageRect?: DOMRect) => {
+      const current = dimsRef.current;
+      const width = stageRect?.width ?? current.width;
+      const height = stageRect?.height ?? current.height;
+      const { dpr } = current;
       if (!width || !height) return;
       source.width = Math.round(width * dpr);
       source.height = Math.round(height * dpr);
@@ -452,7 +456,7 @@ function ShockwaveImpl() {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       dimsRef.current = { width, height, dpr };
       renderer.resize(width, height, dpr);
-      drawSource();
+      drawSource(rect);
     };
 
     const waveForFrame = (now: number): ActiveShockwave | null => {
@@ -491,25 +495,18 @@ function ShockwaveImpl() {
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(stage);
-    let redrawRaf = 0;
-    const scheduleRedraw = () => {
-      if (redrawRaf) return;
-      redrawRaf = requestAnimationFrame(() => {
-        redrawRaf = 0;
-        drawSource();
-      });
+    const redrawAligned = (settling = false, measure = predictRect) => {
+      if (settling) settle(stage);
+      drawSource(measure(stage));
     };
-    window.addEventListener("scroll", scheduleRedraw, {
-      passive: true,
-      capture: true,
-    });
+    const unsubscribe = onGlassFlush(redrawAligned);
     rafRef.current = requestAnimationFrame(render);
 
     return () => {
-      if (redrawRaf) cancelAnimationFrame(redrawRaf);
       cancelAnimationFrame(rafRef.current);
       ro.disconnect();
-      window.removeEventListener("scroll", scheduleRedraw, { capture: true });
+      unsubscribe();
+      settle(stage);
       motionQuery.removeEventListener("change", updateMotion);
       renderer.destroy();
       rendererRef.current = null;

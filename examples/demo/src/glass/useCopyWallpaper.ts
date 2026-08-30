@@ -1,4 +1,5 @@
 import { type RefObject, useEffect, useRef } from "react";
+import { onGlassFlush, predictRect, settle } from "@tomagranate/liquid-glass";
 
 /**
  * Keeps a `.copy-wallpaper` slice (rendered inside an `alignTo` backdrop copy)
@@ -14,18 +15,22 @@ export function useCopyWallpaper(
   useEffect(() => {
     const el = ref.current;
     if (!el || !getTarget) return;
-    const align = () => {
+    const align = (settling = false, measure = predictRect) => {
       const t = getTarget();
       if (!t) return;
-      const r = t.getBoundingClientRect();
+      if (settling) settle(t);
+      const r = measure(t);
       el.style.transform = `translate(${-r.left}px, ${-r.top}px)`;
     };
-    align();
-    window.addEventListener("scroll", align, { passive: true });
-    window.addEventListener("resize", align);
+    const resize = () => align(true);
+    resize();
+    const unsubscribe = onGlassFlush(align);
+    window.addEventListener("resize", resize);
     return () => {
-      window.removeEventListener("scroll", align);
-      window.removeEventListener("resize", align);
+      unsubscribe();
+      window.removeEventListener("resize", resize);
+      const target = getTarget();
+      if (target) settle(target);
     };
   }, [getTarget]);
 

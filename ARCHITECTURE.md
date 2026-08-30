@@ -90,9 +90,23 @@ per controller per frame makes Safari's pre-click compositing flush slow enough
 to noticeably delay click handling. Keeping clone-mode controllers off the ticker
 avoids that.
 
+### Scroll prediction
+
+Native scrolling runs on the compositor. JavaScript sees the new position after
+the compositor scrolls, and its style write appears one frame later. The copied
+backdrop can therefore trail the page by one frame of travel.
+
+The core measures each element's client rect velocity. It leads that rect by one
+measured animation frame. This covers nested and horizontal scrolling. It also
+covers moving `alignTo` targets. Scroll writes share one animation-frame flush.
+A short watchdog clears velocity and snaps each copy to its exact rect.
+
+Prediction cannot know a new velocity before it sees movement. One frame of
+error can remain at scroll start, reversal, and stop.
+
 CSS-only props (`backdrop`, `tint`, `rimLight`, `shadow`) are deliberately
-excluded from the map/filter rebuild signature, so a colour or opacity change
-(e.g. a switch toggling on/off) restyles without any canvas, PNG or filter work.
+excluded from the map/filter rebuild signature. The `predict` option is also
+excluded. These changes avoid canvas, PNG, and filter work.
 
 ## The WebGL texture backend
 

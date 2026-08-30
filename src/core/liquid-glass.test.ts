@@ -5,6 +5,7 @@ import {
   createGlassController,
   generateDisplacementMap,
 } from "./liquid-glass.js";
+import { settle } from "./predict.js";
 
 function countByName(el: Element, name: string): number {
   return Array.from(el.querySelectorAll("*")).filter(
@@ -121,6 +122,61 @@ describe("createGlassController", () => {
     ctrl._reposition(true);
     expect(backdrop.style.width).toBe("0px");
     ctrl.destroy();
+  });
+
+  it("leads clone alignment and snaps exact after settle", () => {
+    const { host, refraction, backdrop, sheen } = layers();
+    let left = 0;
+    let time = 0;
+    const timeSpy = vi.spyOn(performance, "now").mockImplementation(() => time);
+    const canvasSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    const rectSpy = vi
+      .spyOn(host, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(left, 0, 100, 50));
+
+    const ctrl = createGlassController(host, { refraction, backdrop, sheen });
+    ctrl._reposition(true);
+    left = 10;
+    time = 16.7;
+    ctrl._reposition(true);
+
+    expect(backdrop.style.backgroundPosition).toContain("calc(110px");
+
+    settle(host);
+    time = 33.4;
+    ctrl._reposition(true);
+    expect(backdrop.style.backgroundPosition).toContain("calc(120px");
+    ctrl.destroy();
+    canvasSpy.mockRestore();
+    rectSpy.mockRestore();
+    timeSpy.mockRestore();
+  });
+
+  it("keeps clone alignment exact when prediction is off", () => {
+    const { host, refraction, backdrop, sheen } = layers();
+    let left = 0;
+    const canvasSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    const rectSpy = vi
+      .spyOn(host, "getBoundingClientRect")
+      .mockImplementation(() => new DOMRect(left, 0, 100, 50));
+
+    const ctrl = createGlassController(
+      host,
+      { refraction, backdrop, sheen },
+      { predict: false },
+    );
+    ctrl._reposition(true);
+    left = 10;
+    ctrl._reposition(true);
+
+    expect(backdrop.style.backgroundPosition).toContain("calc(120px");
+    ctrl.destroy();
+    canvasSpy.mockRestore();
+    rectSpy.mockRestore();
   });
 });
 

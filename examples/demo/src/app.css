@@ -522,6 +522,68 @@ a {
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
 }
 
+.toggle-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.toggle-control .range-top {
+  flex: 1;
+}
+.toggle-control input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: #fff;
+  cursor: pointer;
+}
+
+/* `?diag` compares a page-drawn marker with its JS-positioned copy. Dashed
+   segments expose vertical error while both 2 px lines share one page x. */
+.scroll-diagnostic {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+.scroll-diagnostic-native,
+.scroll-diagnostic-copy {
+  left: 42vw;
+  top: 0;
+  width: 2px;
+  background: repeating-linear-gradient(
+    to bottom,
+    #ffea00 0 12px,
+    transparent 12px 20px
+  );
+}
+.scroll-diagnostic-native {
+  position: absolute;
+}
+.scroll-diagnostic-copy {
+  position: fixed;
+  left: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    #00eaff 0 12px,
+    transparent 12px 20px
+  );
+}
+.scroll-diagnostic p {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  margin: 0;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #fff;
+}
+
 /* ── Footer ──────────────────────────────────────────────────────────────── */
 .footer {
   padding: 40px 0 110px;
