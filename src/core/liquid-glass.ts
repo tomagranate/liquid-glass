@@ -419,10 +419,15 @@ function currentTime(): number {
   return Date.now();
 }
 
+function clearMeasuredRects(): void {
+  _measureFrame = Number.NaN;
+  _measuredRects = new WeakMap<Element, DOMRect>();
+}
+
 function measurePredictedRect(element: Element, timestamp: number): DOMRect {
   if (timestamp !== _measureFrame) {
+    clearMeasuredRects();
     _measureFrame = timestamp;
-    _measuredRects = new WeakMap<Element, DOMRect>();
   }
   const cached = _measuredRects.get(element);
   if (cached) return cached;
@@ -458,6 +463,7 @@ function repositionAll(): void {
 }
 
 function settleAll(timestamp = currentTime()): void {
+  clearMeasuredRects();
   for (const c of _all) {
     c._settle();
     c._reposition(true, timestamp);

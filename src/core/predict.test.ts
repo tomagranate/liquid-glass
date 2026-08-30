@@ -101,6 +101,17 @@ describe("predictRect", () => {
     expect(predictRect(target.element, 1_020).left).toBeCloseTo(20, 1);
   });
 
+  it("reseeds frame duration after an idle refresh-rate change", () => {
+    recordAnimationFrame(2_000);
+    recordAnimationFrame(2_008);
+
+    const target = movingElement();
+    predictRect(target.element, 2_008);
+    target.move(8);
+
+    expect(predictRect(target.element, 2_016).left).toBe(16);
+  });
+
   it("returns an exact rect after settle", () => {
     const target = movingElement();
     predictRect(target.element, 0);

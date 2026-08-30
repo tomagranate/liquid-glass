@@ -91,6 +91,43 @@ describe("onGlassFlush", () => {
     window.dispatchEvent(new Event("scrollend"));
     rafSpy.mockRestore();
   });
+
+  it("invalidates predicted rects before the settle flush", () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      });
+    const element = document.createElement("div");
+    let left = 0;
+    element.getBoundingClientRect = () => new DOMRect(left, 0, 40, 20);
+    const samples: number[] = [];
+    const unsubscribe = onGlassFlush((settling, measure) => {
+      if (settling) settle(element);
+      samples.push(measure(element).left);
+    });
+    const runNextFrame = (timestamp: number) => {
+      const callback = callbacks.shift();
+      if (!callback) throw new Error("Missing animation frame");
+      callback(timestamp);
+    };
+
+    window.dispatchEvent(new Event("scroll"));
+    runNextFrame(1_000);
+    left = 10;
+    window.dispatchEvent(new Event("scroll"));
+    runNextFrame(1_010);
+    runNextFrame(1_010);
+    runNextFrame(1_010);
+
+    expect(samples).toEqual([0, 20, 10]);
+
+    unsubscribe();
+    window.dispatchEvent(new Event("scrollend"));
+    rafSpy.mockRestore();
+  });
 });
 
 describe("createGlassController", () => {

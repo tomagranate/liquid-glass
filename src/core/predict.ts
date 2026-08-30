@@ -56,6 +56,8 @@ export function recordAnimationFrame(timestamp: number): void {
         frameMs = frameDelta;
         hasFrameDelta = true;
       }
+    } else {
+      hasFrameDelta = false;
     }
   }
   lastFrameTime = timestamp;
