@@ -20,7 +20,12 @@
  */
 
 import "./liquid-glass.css";
-import { predictRect, recordAnimationFrame, settle } from "./predict.js";
+import {
+  predictRect,
+  recordAnimationFrame,
+  resetAnimationFrameTiming,
+  settle,
+} from "./predict.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -469,6 +474,7 @@ function settleAll(timestamp = currentTime()): void {
     c._reposition(true, timestamp);
   }
   emitGlassFlush(true, timestamp);
+  resetAnimationFrameTiming();
 }
 
 function finishScroll(): void {

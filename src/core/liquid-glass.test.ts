@@ -124,6 +124,16 @@ describe("onGlassFlush", () => {
 
     expect(samples).toEqual([0, 20, 10]);
 
+    left = 20;
+    window.dispatchEvent(new Event("scroll"));
+    runNextFrame(1_043);
+    left = 28;
+    window.dispatchEvent(new Event("scroll"));
+    runNextFrame(1_051);
+    runNextFrame(1_051);
+
+    expect(samples[samples.length - 1]).toBe(36);
+
     unsubscribe();
     window.dispatchEvent(new Event("scrollend"));
     rafSpy.mockRestore();

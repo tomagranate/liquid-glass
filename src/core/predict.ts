@@ -66,6 +66,12 @@ export function recordAnimationFrame(timestamp: number): void {
   lastFrameTime = timestamp;
 }
 
+/** Forget frame cadence after animation-frame sampling stops. */
+export function resetAnimationFrameTiming(): void {
+  lastFrameTime = null;
+  hasFrameDelta = false;
+}
+
 /** Measure `el` and return the rect the compositor will show next frame. */
 export function predictRect(el: Element, timestamp = now()): DOMRect {
   const rect = el.getBoundingClientRect();
