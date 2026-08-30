@@ -43,7 +43,10 @@ function makeRect(rect: DOMRect, left: number, top: number): DOMRect {
   } as DOMRect;
 }
 
-/** Record one animation frame so prediction follows the display refresh rate. */
+/**
+ * Record one animation frame so prediction follows the display refresh rate.
+ * Custom animation loops must call this once for each rAF timestamp.
+ */
 export function recordAnimationFrame(timestamp: number): void {
   if (lastFrameTime !== null && timestamp > lastFrameTime) {
     const delta = timestamp - lastFrameTime;

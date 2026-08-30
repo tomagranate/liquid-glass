@@ -47,6 +47,7 @@ export type {
 export {
   getPredictionLead,
   predictRect,
+  recordAnimationFrame,
   setPredictionLead,
   settle,
 } from "./core/predict.js";

@@ -93,7 +93,9 @@ pre-styled widgets.
 
 Also exported for custom pipelines: `createGlassController`,
 `generateDisplacementMap`, `buildGlassFilter`, `moveFilterLens`, `predictRect`,
-`settle`, `setPredictionLead` (SVG), and `WebGLGlass` (the texture backend).
+`recordAnimationFrame`, `settle`, `setPredictionLead`, `onGlassFlush` (SVG), and
+`WebGLGlass` (the texture backend). Call `recordAnimationFrame` once per rAF when
+using `predictRect` in a custom animation loop.
 
 ## How it works
 
