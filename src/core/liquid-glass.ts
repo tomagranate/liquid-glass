@@ -440,6 +440,7 @@ function emitGlassFlush(settling: boolean, timestamp: number): void {
 /** Run `listener` with each coalesced scroll flush and final settle flush. */
 export function onGlassFlush(listener: GlassFlushListener): () => void {
   _flushListeners.add(listener);
+  bindScroll();
   return () => _flushListeners.delete(listener);
 }
 

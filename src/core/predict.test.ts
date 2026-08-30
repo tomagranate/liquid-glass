@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { predictRect, setPredictionLead, settle } from "./predict.js";
+import {
+  predictRect,
+  recordAnimationFrame,
+  setPredictionLead,
+  settle,
+} from "./predict.js";
 
 function movingElement() {
   const element = document.createElement("div");
@@ -69,6 +74,20 @@ describe("predictRect", () => {
     const rect = predictRect(travelTarget.element, 1);
     expect(rect.left).toBe(1_120);
     expect(rect.top).toBe(-1_120);
+  });
+
+  it("ignores idle gaps when estimating frame duration", () => {
+    for (let timestamp = 0; timestamp <= 400; timestamp += 10) {
+      recordAnimationFrame(timestamp);
+    }
+    recordAnimationFrame(1_000);
+    recordAnimationFrame(1_010);
+
+    const target = movingElement();
+    predictRect(target.element, 1_010);
+    target.move(10);
+
+    expect(predictRect(target.element, 1_020).left).toBeCloseTo(20, 1);
   });
 
   it("returns an exact rect after settle", () => {

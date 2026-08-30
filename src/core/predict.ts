@@ -45,8 +45,12 @@ function makeRect(rect: DOMRect, left: number, top: number): DOMRect {
 /** Record one animation frame so prediction follows the display refresh rate. */
 export function recordAnimationFrame(timestamp: number): void {
   if (lastFrameTime !== null && timestamp > lastFrameTime) {
-    const delta = clamp(timestamp - lastFrameTime, MIN_FRAME_MS, MAX_FRAME_MS);
-    frameMs += (delta - frameMs) * FRAME_EMA_WEIGHT;
+    const delta = timestamp - lastFrameTime;
+    // A long gap is idle time or a blocked main thread, not a display frame.
+    if (delta <= MAX_FRAME_MS) {
+      const frameDelta = Math.max(delta, MIN_FRAME_MS);
+      frameMs += (frameDelta - frameMs) * FRAME_EMA_WEIGHT;
+    }
   }
   lastFrameTime = timestamp;
 }

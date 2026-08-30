@@ -4,6 +4,7 @@ import {
   buildGlassFilter,
   createGlassController,
   generateDisplacementMap,
+  onGlassFlush,
 } from "./liquid-glass.js";
 import { settle } from "./predict.js";
 
@@ -66,6 +67,29 @@ describe("buildGlassFilter", () => {
       (m) => m.getAttribute("result") === "spec",
     );
     expect(spec).toBeTruthy();
+  });
+});
+
+describe("onGlassFlush", () => {
+  it("binds scroll handling without a glass controller", () => {
+    let scheduled: FrameRequestCallback | undefined;
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        scheduled = callback;
+        return 1;
+      });
+    const listener = vi.fn();
+    const unsubscribe = onGlassFlush(listener);
+
+    window.dispatchEvent(new Event("scroll"));
+    expect(scheduled).toBeTypeOf("function");
+    scheduled?.(16.7);
+    expect(listener).toHaveBeenCalledWith(false, expect.any(Function));
+
+    unsubscribe();
+    window.dispatchEvent(new Event("scrollend"));
+    rafSpy.mockRestore();
   });
 });
 
